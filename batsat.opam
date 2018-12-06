@@ -12,6 +12,7 @@ build: [
 depends: [
   "dune" {build & >= "1.3.0" }
   "odoc" {with-doc}
+  "conf-rust" {build}
 ]
 tags: [ "minisat" "solver" "SAT" ]
 homepage: "https://github.com/c-cube/batsat-ocaml/"
