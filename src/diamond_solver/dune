@@ -1,0 +1,16 @@
+
+(executable
+  (name diamond_solver)
+  (libraries containers batsat))
+
+(alias
+  (name runtest)
+  (action
+    (progn
+      (run ./diamond_solver.exe ../../tests/eq_diamond2.smt2)
+      (run ./diamond_solver.exe ../../tests/eq_diamond5.smt2)
+      (run ./diamond_solver.exe ../../tests/eq_diamond10.smt2)
+    )))
+
+(ocamllex
+  (modules Sexp_lex))
