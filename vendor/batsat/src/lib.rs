@@ -23,14 +23,14 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #[cfg(not(feature="logging"))]
 #[macro_use]
 pub(crate) mod log {
-    macro_rules! debug {
-        ($( $x:expr ),*) => {
-        }
+    macro_rules! trace {
+        ($( $x:expr ),*) => {}
     }
-
+    macro_rules! debug {
+        ($( $x:expr ),*) => {}
+    }
     macro_rules! info {
-        ($( $x:expr ),*) => {
-        }
+        ($( $x:expr ),*) => {}
     }
 }
 
@@ -50,12 +50,19 @@ pub mod dimacs;
 pub mod core;
 pub mod interface;
 pub mod callbacks;
+pub mod theory;
+pub mod drat;
 
-// TODO: also Theory and TheoryArgument
-pub use interface::{SolverInterface};
-pub use callbacks::{Callbacks,Basic as BasicCallbacks,ProgressStatus};
-pub use core::{Solver, SolverOpts};
-pub use clause::{lbool, Lit, Var, LMap, LSet, VMap, display::Print};
+pub use crate::{
+    theory::{TheoryArgument,Theory,EmptyTheory},
+    interface::SolverInterface,
+    callbacks::{Callbacks,Basic as BasicCallbacks,Stats as StatsCallbacks, ProgressStatus},
+    core::{Solver, SolverOpts},
+    clause::{
+        lbool, Lit, Var, LMap, LSet, VMap, display::Print,
+        Kind as ClauseKind,
+    },
+};
 
-/// Basic solver
+/// Basic solver, with basic callbacks and no theory
 pub type BasicSolver = Solver<BasicCallbacks>;

@@ -19,14 +19,18 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-use std::io::{self, BufRead};
-use interface::SolverInterface;
-use {Lit, Var, lbool};
+use {
+    std::io::{self, BufRead},
+    crate::{interface::SolverInterface, {Lit, Var, lbool}},
+};
 
 /// `parse(input, solver)` adds the content of `input` to the solver
 ///
-/// param `is_strict` if true, will fail if number of clauses/vars does not match the declared header
-/// param `incremental` if true, accept the [.icnf format](http://www.siert.nl/icnf/)
+/// ## Params
+/// - `is_strict` if true, will fail if number of clauses/vars does not match the declared header
+/// - `incremental` if true, accept the [.icnf format](http://www.siert.nl/icnf/)
+/// - `solver` is used to process incremental calls (`a` lines in icnf)
+/// - `th` is given to `solver` to solve.
 pub fn parse<S: SolverInterface, R: BufRead>(
     input: &mut R,
     solver: &mut S,

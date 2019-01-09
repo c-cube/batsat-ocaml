@@ -19,15 +19,17 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-use std::fmt;
-use std::iter::DoubleEndedIterator;
-use std::{ops,u32,slice};
-use smallvec::SmallVec;
-
-use intmap::{AsIndex, IntMap, IntSet, IntMapBool};
-use alloc::{self, RegionAllocator};
+use {
+    std::{fmt, iter::DoubleEndedIterator, ops,u32,slice},
+    smallvec::SmallVec,
+    crate::{
+        intmap::{AsIndex, IntMap, IntSet, IntMapBool},
+        alloc::{self, RegionAllocator},
+    },
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct Var(u32);
 
 impl fmt::Debug for Var {
@@ -65,6 +67,7 @@ impl AsIndex for Var {
 pub type VMap<V> = IntMap<Var, V>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct Lit(u32);
 
 impl Lit {
@@ -91,6 +94,25 @@ impl Lit {
     pub fn var(&self) -> Var {
         Var(self.0 >> 1)
     }
+
+    /// `lit.apply_sign(b)` keeps the same sign if `b==true`, flips sign otherwise
+    ///
+    /// ```
+    /// use batsat::*;
+    /// let mut sat = BasicSolver::default();
+    /// let lit1 = Lit::new(sat.new_var_default(), true);
+    /// assert_eq!(lit1, lit1.apply_sign(true));
+    /// assert_eq!(!lit1, lit1.apply_sign(false));
+    /// let lit2 = Lit::new(sat.new_var_default(), false);
+    /// assert_ne!(lit1.var(), lit2.var());
+    /// assert_eq!(lit2, lit2.apply_sign(true));
+    /// assert_eq!(!lit2, lit2.apply_sign(false));
+    /// ```
+    #[inline(always)]
+    pub fn apply_sign(&self, sign: bool) -> Lit {
+        if sign { *self } else { ! *self }
+    }
+
 }
 
 impl fmt::Debug for Lit {
@@ -100,7 +122,7 @@ impl fmt::Debug for Lit {
         } else if self.0 == !1 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "{}{}", if self.sign() {""} else {"-"}, self.0 / 2 + 1)
+            write!(f, "{}{:?}", if self.sign() {""} else {"-"}, self.var())
         }
     }
 }
@@ -257,6 +279,14 @@ impl ops::BitOrAssign for lbool {
     }
 }
 
+/// The source of a clause
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Kind {
+    Axiom,
+    Learnt,
+    Theory,
+}
+
 #[derive(Debug, Clone, Copy)]
 /// A reference to some clause
 pub(crate) struct ClauseRef<'a> {
@@ -306,8 +336,13 @@ impl<'a> ClauseRef<'a> {
         unsafe { self.extra.expect("no extra field").f32 }
     }
     #[inline(always)]
+    pub fn lits(& self) -> &'a [Lit] {
+        let ptr = self.data.as_ptr() as *const ClauseData as *const Lit;
+        unsafe { slice::from_raw_parts(ptr, self.data.len()) }
+    }
+    #[inline(always)]
     pub fn iter(& self) -> impl DoubleEndedIterator<Item=&'a Lit> {
-        self.data.iter().map(|lit| unsafe { &lit.lit })
+        self.lits().iter()
     }
 }
 
@@ -403,8 +438,10 @@ impl<'a> ClauseMut<'a> {
         self.set_reloced(true);
         self.data[0].cref = c;
     }
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
-        self.data.iter().map(|lit| unsafe { &lit.lit })
+    #[inline(always)]
+    pub fn lits(& self) -> &'a [Lit] {
+        let ptr = self.data.as_ptr() as *const ClauseData as *const Lit;
+        unsafe { slice::from_raw_parts(ptr, self.data.len()) }
     }
     pub fn shrink(self, new_size: u32) {
         debug_assert!(2 <= new_size);
@@ -453,6 +490,7 @@ pub struct ClauseAllocator {
     extra_clause_field: bool,
 }
 
+#[repr(C)]
 #[derive(Clone, Copy)]
 /// Items used in the clause allocator. It should be compact enough that
 /// we do no waste space.
@@ -675,7 +713,7 @@ pub(crate) type CRef = alloc::Ref<ClauseData>;
 
 /// Predicate that decides whether a value `V` is deleted or not
 pub trait DeletePred<V> {
-    fn deleted(&self, &V) -> bool;
+    fn deleted(&self, v: &V) -> bool;
 }
 
 pub type OccVec<V> = SmallVec<[V;4]>;
@@ -839,6 +877,7 @@ pub mod display {
 
 #[cfg(test)]
 mod test {
+    use super::*;
 
     /// test that ClauseData doesn't waste space
     #[test]
@@ -866,7 +905,6 @@ mod test {
 
     #[test]
     fn test_not() {
-        use super::lbool;
         assert_eq!(- lbool::TRUE, lbool::FALSE);
         assert_eq!(- lbool::FALSE, lbool::TRUE);
         assert_eq!(- lbool::UNDEF, lbool::UNDEF);
@@ -874,7 +912,6 @@ mod test {
 
     #[test]
     fn test_bitxor() {
-        use super::lbool;
         assert_eq!(lbool::TRUE ^ true, lbool::FALSE);
         assert_eq!(lbool::TRUE ^ false, lbool::TRUE);
         assert_eq!(lbool::FALSE ^ true, lbool::TRUE);
@@ -885,7 +922,6 @@ mod test {
 
     #[test]
     fn test_bitand() {
-        use super::lbool;
         assert_eq!(lbool::TRUE & lbool::TRUE, lbool::TRUE);
         assert_eq!(lbool::TRUE & lbool::FALSE, lbool::FALSE);
         assert_eq!(lbool::FALSE & lbool::TRUE, lbool::FALSE);
@@ -907,6 +943,11 @@ mod test {
         assert_eq!(lbool::FALSE | lbool::UNDEF, lbool::UNDEF);
         assert_eq!(lbool::UNDEF | lbool::TRUE, lbool::TRUE);
         assert_eq!(lbool::TRUE | lbool::UNDEF, lbool::TRUE);
+    }
+
+    #[test]
+    fn test_cref_undef_special() {
+        assert_eq!(CRef::UNDEF, CRef::SPECIAL + 1);
     }
 }
 

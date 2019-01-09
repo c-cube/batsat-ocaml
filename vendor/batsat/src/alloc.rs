@@ -45,6 +45,9 @@ impl<T: Copy + Default> RegionAllocator<T> {
     pub fn alloc(&mut self, size: u32) -> Ref<T> {
         debug_assert!(size > 0);
         let r = Ref(self.vec.len() as u32, PhantomData);
+        if r >= Ref::SPECIAL {
+            panic!("allocator: max capacity reached");
+        }
         self.vec.extend((0..size).map(|_| T::default()));
         r
     }
@@ -79,7 +82,9 @@ pub struct Ref<T: Copy>(u32, PhantomData<fn(T) -> T>);
 
 impl<T: Copy> fmt::Debug for Ref<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Ref").field(&self.0).finish()
+        if self == &Ref::UNDEF { write!(f, "UNDEF") }
+        else if self == &Ref::SPECIAL { write!(f, "SPECIAL") }
+        else { f.debug_tuple("Ref").field(&self.0).finish() }
     }
 }
 impl<T: Copy> PartialEq for Ref<T> {
@@ -108,6 +113,7 @@ impl<T: Copy> Default for Ref<T> {
 
 impl<T: Copy> Ref<T> {
     pub const UNDEF: Self = Ref(!0, PhantomData);
+    pub const SPECIAL: Self = Ref((!0)-1, PhantomData);
 }
 
 impl<T: Copy> ops::Add<u32> for Ref<T> {

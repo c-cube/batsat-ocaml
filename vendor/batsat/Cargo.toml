@@ -11,10 +11,13 @@
 # will likely look very different (and much more reasonable)
 
 [package]
+edition = "2018"
 name = "batsat"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
-description = "SAT solver in Rust"
+exclude = ["../../benchs", "../../papers", "../../scripts"]
+publish = true
+description = "Extensible SAT solver in Rust"
 homepage = "https://github.com/c-cube/batsat"
 readme = "../../README.md"
 keywords = ["sat", "minisat"]
