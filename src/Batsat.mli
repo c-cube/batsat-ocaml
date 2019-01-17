@@ -44,6 +44,9 @@ type assumptions = Lit.t array
 
 val create : unit -> t
 
+val delete : t -> unit
+(** Release resources *)
+
 exception Unsat
 
 val add_clause_l : t -> Lit.t list -> unit
@@ -62,6 +65,7 @@ val solve : ?assumptions:assumptions -> t -> unit
 
 val n_vars : t -> int
 val n_clauses : t -> int
+val n_conflicts : t -> int
 
 val is_in_unsat_core : t -> Lit.t -> bool
 (** [is_in_unsat_core s lit] checks whether [abs(lit)] is part of the

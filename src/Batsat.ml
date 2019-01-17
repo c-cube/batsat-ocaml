@@ -51,7 +51,10 @@ end
 
 let create () =
   let s = Raw.create() in
+  Gc.finalise Raw.delete s;
   s
+
+let delete = Raw.delete
 
 exception Unsat
 
@@ -79,6 +82,7 @@ let pp_clause out l =
 let simplify s = Raw.simplify s |> check_ret_
 let n_vars = Raw.nvars
 let n_clauses = Raw.nclauses
+let n_conflicts = Raw.nconflicts
 let n_proved_lvl_0 = Raw.n_proved
 let get_proved_lvl_0 = Raw.get_proved
 
