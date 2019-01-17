@@ -1,6 +1,6 @@
 
 build:
-	@dune build @install
+	@dune build @install --profile=release
 
 clean:
 	@dune clean
@@ -13,7 +13,7 @@ test:
 
 ICNF_SOLVE=src/icnf-solve/icnf_solve.exe
 icnf-solve: build
-	@dune build $(ICNF_SOLVE)
+	@dune build $(ICNF_SOLVE) --profile=release
 	@strip _build/default/$(ICNF_SOLVE)
 	@ln -sf _build/default/$(ICNF_SOLVE) .
 
