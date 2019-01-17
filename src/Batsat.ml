@@ -32,21 +32,21 @@ module Raw = struct
 
   external simplify : t -> bool = "ml_batsat_simplify"
 
-  external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit"
-  external assume : t -> Lit.t -> unit = "ml_batsat_assume"
+  external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit" [@@noalloc]
+  external assume : t -> Lit.t -> unit = "ml_batsat_assume" [@@noalloc]
   external solve : t -> bool = "ml_batsat_solve"
 
-  external nvars : t -> int = "ml_batsat_nvars"
-  external nclauses : t -> int = "ml_batsat_nclauses"
-  external nconflicts : t -> int = "ml_batsat_nconflicts"
+  external nvars : t -> int = "ml_batsat_nvars" [@@noalloc]
+  external nclauses : t -> int = "ml_batsat_nclauses" [@@noalloc]
+  external nconflicts : t -> int = "ml_batsat_nconflicts" [@@noalloc]
 
-  external value : t -> Lit.t -> lbool = "ml_batsat_value"
-  external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption"
+  external value : t -> Lit.t -> lbool = "ml_batsat_value" [@@noalloc]
+  external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption" [@@noalloc]
   external unsat_core: t -> Lit.t array = "ml_batsat_unsat_core"
 
-  external n_proved: t -> int = "ml_batsat_n_proved"
-  external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
-  external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
+  external n_proved: t -> int = "ml_batsat_n_proved" [@@noalloc]
+  external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved" [@@noalloc]
+  external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0" [@@noalloc]
 end
 
 let create () =

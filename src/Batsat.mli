@@ -42,33 +42,6 @@ end
 
 type assumptions = Lit.t array
 
-module Raw : sig
-  type lbool = int (* 0,1,2 *)
-  external create : unit -> t = "ml_batsat_new"
-  external delete : t -> unit = "ml_batsat_delete"
-
-  (* the [add_clause] functions return [false] if the clause
-     immediately makes the problem unsat *)
-
-  external simplify : t -> bool = "ml_batsat_simplify"
-
-  external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit"
-  external assume : t -> Lit.t -> unit = "ml_batsat_assume"
-  external solve : t -> bool = "ml_batsat_solve"
-
-  external nvars : t -> int = "ml_batsat_nvars"
-  external nclauses : t -> int = "ml_batsat_nclauses"
-  external nconflicts : t -> int = "ml_batsat_nconflicts"
-
-  external value : t -> Lit.t -> lbool = "ml_batsat_value"
-  external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption"
-  external unsat_core: t -> Lit.t array = "ml_batsat_unsat_core"
-
-  external n_proved: t -> int = "ml_batsat_n_proved"
-  external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
-  external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
-end
-
 val create : unit -> t
 
 exception Unsat
