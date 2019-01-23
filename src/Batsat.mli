@@ -67,6 +67,14 @@ val n_vars : t -> int
 val n_clauses : t -> int
 val n_conflicts : t -> int
 
+val n_props : t -> int
+(** Number of SAT propagations
+    @since NEXT_RELEASE *)
+
+val n_decisions : t -> int
+(** Number of SAT decisions
+    @since NEXT_RELEASE *)
+
 val is_in_unsat_core : t -> Lit.t -> bool
 (** [is_in_unsat_core s lit] checks whether [abs(lit)] is part of the
     unsat core (if it was an assumption)

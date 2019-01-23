@@ -39,6 +39,9 @@ module Raw = struct
   external nvars : t -> int = "ml_batsat_nvars" [@@noalloc]
   external nclauses : t -> int = "ml_batsat_nclauses" [@@noalloc]
   external nconflicts : t -> int = "ml_batsat_nconflicts" [@@noalloc]
+  external ndecisions : t -> int = "ml_batsat_ndecisions" [@@noalloc]
+  external nprops : t -> int = "ml_batsat_nprops" [@@noalloc]
+(*   external nrestarts : t -> int "ml_batsat_nrestarts" [@@noalloc] *)
 
   external value : t -> Lit.t -> lbool = "ml_batsat_value" [@@noalloc]
   external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption" [@@noalloc]
@@ -85,6 +88,9 @@ let n_clauses = Raw.nclauses
 let n_conflicts = Raw.nconflicts
 let n_proved_lvl_0 = Raw.n_proved
 let get_proved_lvl_0 = Raw.get_proved
+(* let n_restarts = Raw.nrestarts *)
+let n_props = Raw.nprops
+let n_decisions = Raw.ndecisions
 
 let proved_lvl_0 s =
   Array.init (n_proved_lvl_0 s) (get_proved_lvl_0 s)
