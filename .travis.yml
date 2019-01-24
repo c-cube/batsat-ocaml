@@ -6,8 +6,7 @@ services:
 env:
   global:
   - PINS="batsat:."
-  - DISTRO="ubuntu-16.04"
-  - PRE_INSTALL_HOOK="sudo apt-get install cargo -y"
+  - DISTRO="debian-unstable"
   matrix:
   - PACKAGE="batsat" OCAML_VERSION="4.03"
   - PACKAGE="batsat" OCAML_VERSION="4.04"
