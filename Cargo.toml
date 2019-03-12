@@ -9,8 +9,8 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 
 ocaml = "0.5"
-batsat = "^0.3"
-#batsat = { git="https://github.com/c-cube/batsat", rev="1268e344922724d03ae192f8f70869644520c721" }
+#batsat = "^0.3"
+batsat = { git="https://github.com/c-cube/batsat" }
 
 [workspace]
 

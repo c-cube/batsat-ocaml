@@ -1,7 +1,7 @@
 [[package]]
 name = "batsat"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/c-cube/batsat#81c825bcdb435bbb7a991aa0aa3b25683fba2504"
 dependencies = [
  "bit-vec 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -11,7 +11,7 @@ dependencies = [
 name = "batsat-stubs"
 version = "0.1.0"
 dependencies = [
- "batsat 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "batsat 0.3.1 (git+https://github.com/c-cube/batsat)",
  "ocaml 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -47,7 +47,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [metadata]
-"checksum batsat 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f338db3fbdfa42425542d9115e53a4a9b6785f59df14120a82d1577a8fbe42e3"
+"checksum batsat 0.3.1 (git+https://github.com/c-cube/batsat)" = "<none>"
 "checksum bit-vec 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4440d5cb623bb7390ae27fec0bb6c61111969860f8e3ae198bfa0663645e67cf"
 "checksum ocaml 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c601c4f29f623de93267d275a9bf584d8d5e2eac75f95a2955d05f09c00797e2"
 "checksum smallvec 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)" = "153ffa32fd170e9944f7e0838edf824a754ec4c1fc64746fcc9fe1f8fa602e5d"
