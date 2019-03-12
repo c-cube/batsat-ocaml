@@ -3,6 +3,7 @@
 
 type t
 
+type 'a iter = ('a -> unit) -> unit
 type 'a printer = Format.formatter -> 'a -> unit
 
 (* use normal convention of positive/negative ints *)
@@ -21,6 +22,81 @@ end
 
 type assumptions = Lit.t array
 
+type value =
+  | V_undef
+  | V_true
+  | V_false
+
+let mk_val = function
+  | 0 -> V_true
+  | 1 -> V_false
+  | 2 | 3 -> V_undef (* yep… *)
+  | n -> failwith (Printf.sprintf "unknown lbool: %d" n)
+
+let neg_value = function
+  | V_true -> V_false
+  | V_false -> V_true
+  | V_undef -> V_undef
+
+module TheoryArgument = struct
+  type t (* opaque *)
+  type lbool = int
+
+  external value_ : t -> Lit.t -> lbool = "ml_batsat_arg_value" [@@noalloc]
+  external model_size_ : t -> int = "ml_batsat_arg_model_len" [@@noalloc]
+  external model_get_ : t -> int -> Lit.t = "ml_batsat_arg_model_len" [@@noalloc]
+  external raise_conflict_ : t -> Lit.t array -> bool -> unit = "ml_batsat_arg_raise_conflict"
+
+  external mk_lit : t -> Lit.t = "ml_batsat_arg_mk_lit" [@@noalloc]
+  external push_lemma : t -> Lit.t array -> unit = "ml_batsat_arg_push_lemma"
+  external propagate : t -> Lit.t -> unit = "ml_batsat_arg_propagate" [@@noalloc]
+
+  let[@inline] value a lit = mk_val (value_ a lit)
+  let[@inline] raise_conflict a c = raise_conflict_ a c false
+  let[@inline] raise_permanent_conflict a c = raise_conflict_ a c true
+
+  (* as a sequence *)
+  let[@specialise] model_iter a yield =
+    let n = model_size_ a in
+    for i = 0 to n-1 do
+      yield (model_get_ a i)
+    done
+
+  (* as an array *)
+  let model_a a : _ array =
+    Array.init (model_size_ a) (fun i -> model_get_ a i)
+end
+
+module Theory = struct
+  (* NOTE: order and types matter a lot here! see `lib.rs/RecordField` *)
+  type t = {
+    n_levels: unit -> int;
+    push_lvl: unit -> unit;
+    pop_levels: int -> unit;
+    has_partial_check: bool;
+    partial_check: TheoryArgument.t -> unit;
+    final_check: TheoryArgument.t -> unit;
+    explain_prop: Lit.t -> Lit.t array;
+  }
+
+  let make
+      ~n_levels
+      ~push_lvl
+      ~pop_levels
+      ?partial_check
+      ~final_check
+      ?(explain_prop=fun _ -> failwith "explain prop not implemented")
+      () : t =
+    let partial_check, has_partial_check = match partial_check with
+      | None -> (fun _ -> ()), false
+      | Some f -> f, true
+    in
+    { n_levels; push_lvl; pop_levels; partial_check; has_partial_check;
+      final_check; explain_prop; }
+
+  (* TODO: maybe constructor with first-class module? *)
+end
+
 module Raw = struct
   type lbool = int (* 0,1,2 *)
   external create : unit -> t = "ml_batsat_new"
@@ -28,6 +104,9 @@ module Raw = struct
 
   (* the [add_clause] functions return [false] if the clause
      immediately makes the problem unsat *)
+
+  (* only call on a new solver, without a theory *)
+  external set_th : t -> Theory.t -> unit = "ml_batsat_set_th"
 
   external simplify : t -> bool = "ml_batsat_simplify"
 
@@ -59,6 +138,12 @@ let create () =
   s
 
 let delete = Raw.delete
+
+let create_th (th:Theory.t) =
+  let s = Raw.create() in
+  Raw.set_th s th; (* before anything else *)
+  Gc.finalise Raw.delete s;
+  s
 
 exception Unsat
 
@@ -110,22 +195,12 @@ let is_in_unsat_core s lit = Raw.check_assumption s lit
 
 let unsat_core = Raw.unsat_core
 
-type value =
-  | V_undef
-  | V_true
-  | V_false
 let string_of_value = function
   | V_undef -> "undef"
   | V_true -> "true"
   | V_false -> "false"
 
 let pp_value out v = Format.pp_print_string out (string_of_value v)
-
-let mk_val = function
-  | 0 -> V_true
-  | 1 -> V_false
-  | 2 | 3 -> V_undef (* yep… *)
-  | n -> failwith (Printf.sprintf "unknown lbool: %d" n)
 
 let value s lit = mk_val @@ Raw.value s lit
 let value_lvl_0 s lit = mk_val @@ Raw.value_lvl_0 s lit

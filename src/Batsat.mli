@@ -6,6 +6,7 @@
 type t
 (** An instance of batsat (stateful) *)
 
+type 'a iter = ('a -> unit) -> unit
 type 'a printer = Format.formatter -> 'a -> unit
 
 module Lit : sig
@@ -35,9 +36,46 @@ module Lit : sig
   val pp : t printer
 end
 
+type value =
+  | V_undef
+  | V_true
+  | V_false
+
+val pp_value : value printer
+val string_of_value : value -> string
+val neg_value : value -> value
+
+(** Passed to the Theory *)
+module TheoryArgument : sig
+  type t
+
+  val value : t -> Lit.t -> value
+  val model_a : t -> Lit.t array
+  val model_iter : t -> Lit.t iter
+  val raise_permanent_conflict : t -> Lit.t array -> unit
+  val push_lemma : t -> Lit.t array -> unit
+  val raise_conflict : t -> Lit.t array -> unit
+  val mk_lit : t -> Lit.t
+  val propagate : t -> Lit.t -> unit
+end
+
+module Theory : sig
+  type t
+
+  val make:
+    n_levels:(unit -> int) ->
+    push_lvl:(unit -> unit) ->
+    pop_levels:(int -> unit) ->
+    ?partial_check:(TheoryArgument.t -> unit) ->
+    final_check:(TheoryArgument.t -> unit) ->
+    ?explain_prop:(int -> int array) -> unit -> t
+end
+
 type assumptions = Lit.t array
 
 val create : unit -> t
+
+val create_th : Theory.t -> t
 
 val delete : t -> unit
 (** Release resources *)
@@ -97,14 +135,6 @@ val get_proved_lvl_0 : t -> int -> Lit.t
 
 val proved_lvl_0 : t -> Lit.t array
 (** All literals currently proved at level 0 *)
-
-type value =
-  | V_undef
-  | V_true
-  | V_false
-
-val pp_value : value printer
-val string_of_value : value -> string
 
 val value : t -> Lit.t -> value
 
