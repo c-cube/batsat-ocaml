@@ -4,57 +4,58 @@ extern crate ocaml;
 
 #[link(name="batsat")]
 
-use ocaml::{ToValue,Value,value};
+use {
+    ocaml::{ToValue,Value,value },
+    std::{ptr, mem, ops, },
+};
 
-use std::ptr;
-use std::mem;
-use std::ops;
+use batsat::{Var,Lit,lbool,SolverInterface,BasicSolver as SatSolver};
 
-use batsat::{Var,Lit,lbool,SolverInterface,BasicSolver as InnerSolver};
-
-pub struct Solver {
-    s: InnerSolver,
-    vars: Vec<Var>, // int->var
+struct Solver {
+    s: SatSolver,
     cur_clause: Vec<Lit>,
     assumptions: Vec<Lit>,
 }
 
+/// Convert a literal into a signed integer for the OCaml frontend
+// NOTE: we add 1 to prevent the first variable from having index 0
+#[inline]
+fn int_of_lit(lit: Lit) -> isize {
+    (lit.var().idx() as isize + 1) * if lit.sign() { 1 } else { -1 }
+}
+
+#[inline]
+fn lit_of_int(lit: i32) -> Lit {
+    assert!(lit != 0);
+    let v = Var::unsafe_from_idx((lit.abs() - 1) as u32);
+    Lit::new(v, lit>0)
+}
+
 impl Solver {
     fn new() -> Self {
+        let s = SatSolver::default();
         Solver {
-            s: InnerSolver::default(), vars: Vec::new(),
-            cur_clause: vec![], assumptions: vec![],
+            s, cur_clause: vec![], assumptions: vec![],
         }
     }
 }
 
 impl Solver {
-    fn decompose(&mut self) -> (&mut InnerSolver, &mut Vec<Lit>, &mut Vec<Lit>) {
-        (&mut self.s, &mut self.cur_clause, &mut self.assumptions)
-    }
-
-    /// Allocate variables until we get the one corresponding to `x`
-    fn get_var(&mut self, x: usize) -> Var {
-        while x >= self.vars.len() {
-            self.vars.push(self.s.new_var_default());
-        }
-        self.vars[x]
-    }
-
     #[inline]
     fn get_lit(&mut self, lit: i32) -> Lit {
         assert!(lit != 0);
-        let v = self.get_var(lit.abs() as usize);
+        let v = self.s.var_of_int((lit.abs()-1) as u32);
         Lit::new(v, lit>0)
     }
 }
 
 impl ops::Deref for Solver {
-    type Target = InnerSolver;
+    type Target = SatSolver;
     fn deref(&self) -> &Self::Target { &self.s }
 }
 
 impl ops::DerefMut for Solver {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.s }
 }
 
@@ -89,6 +90,8 @@ extern "C" fn batsat_finalizer(v: ocaml::core::Value) {
     delete_value(Value::new(v));
 }
 
+// ### SOLVER
+
 caml!(ml_batsat_new, |_params|, <res>, {
     let solver = Box::new(Solver::new());
     let ptr = Box::into_raw(solver) as *mut Solver;
@@ -107,6 +110,20 @@ caml!(ml_batsat_simplify, |ptr|, <res>, {
     })
 } -> res);
 
+caml!(ml_batsat_get_lit, |ptr, i|, <res>, {
+    with_solver!(solver, ptr, {
+        let lit = solver.get_lit(i.isize_val() as i32);
+        res = Value::isize(int_of_lit(lit));
+    })
+} -> res);
+
+caml!(ml_batsat_fresh_lit, |ptr, i|, <res>, {
+    with_solver!(solver, ptr, {
+        let lit = Lit::new(solver.s.new_var_default(), true);
+        res = Value::isize(int_of_lit(lit));
+    })
+} -> res);
+
 /// Add literal, or add clause if the lit is 0
 caml!(ml_batsat_addlit, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
@@ -116,12 +133,12 @@ caml!(ml_batsat_addlit, |ptr, lit|, <res>, {
         if lit == 0 {
             // push current clause into vector `clauses`, reset it
             //println!("add-lit {:?}", 0);
-            let (solver, cur, _) = solver.decompose();
-            r = solver.add_clause_reuse(cur);
-            cur.clear();
+            let Solver {s:solver, cur_clause, ..} = solver;
+            r = solver.add_clause_reuse(cur_clause);
+            cur_clause.clear();
         } else {
             // push literal into clause
-            let lit = solver.get_lit(lit);
+            let lit = lit_of_int(lit);
             //println!("add-lit {:?}", lit);
             solver.cur_clause.push(lit);
         }
@@ -132,12 +149,8 @@ caml!(ml_batsat_addlit, |ptr, lit|, <res>, {
 /// Add assumption into the solver
 caml!(ml_batsat_assume, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.isize_val() as i32;
-
-        assert!(lit != 0);
-        let lit = solver.get_lit(lit);
+        let lit = lit_of_int(lit.isize_val() as i32);
         solver.assumptions.push(lit);
-
         res = value::UNIT;
     })
 } -> res);
@@ -145,7 +158,8 @@ caml!(ml_batsat_assume, |ptr, lit|, <res>, {
 caml!(ml_batsat_solve, |ptr|, <res>, {
     with_solver!(solver, ptr, {
         let r = {
-            let (s, _, assumptions) = solver.decompose();
+            let Solver {s, assumptions, ..} = solver;
+            // call with or without theory
             let lb = s.solve_limited(&assumptions);
             assumptions.clear(); // reset assumptions
             assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
@@ -158,14 +172,8 @@ caml!(ml_batsat_solve, |ptr|, <res>, {
 
 caml!(ml_batsat_value, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.isize_val() as i32;
-        let r =
-            if lit.abs() >= solver.num_vars() as i32 {
-                lbool::UNDEF
-            } else {
-                let lit = solver.get_lit(lit as i32);
-                solver.s.value_lit(lit)
-            };
+        let lit = lit_of_int(lit.isize_val() as i32);
+        let r = solver.s.value_lit(lit);
         //println!("val for {:?}: {:?}", lit, r);
         res = Value::isize(r.to_u8() as isize);
 
@@ -174,14 +182,8 @@ caml!(ml_batsat_value, |ptr, lit|, <res>, {
 
 caml!(ml_batsat_value_lvl_0, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.isize_val() as i32;
-        let r =
-            if lit.abs() >= solver.num_vars() as i32 {
-                lbool::UNDEF
-            } else {
-                let lit = solver.get_lit(lit as i32);
-                solver.s.value_lvl_0(lit)
-            };
+        let lit = lit_of_int(lit.isize_val() as i32);
+        let r = solver.s.value_lvl_0(lit);
         //println!("val for {:?}: {:?}", lit, r);
         res = Value::isize(r.to_u8() as isize);
 
@@ -191,21 +193,13 @@ caml!(ml_batsat_value_lvl_0, |ptr, lit|, <res>, {
 
 caml!(ml_batsat_check_assumption, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.isize_val() as i32;
-
         // check unsat-core
-        let lit = solver.get_lit(lit);
+        let lit = lit_of_int(lit.isize_val() as i32);
         let r = solver.s.unsat_core_contains_var(lit.var());
 
         res = Value::bool(r);
     })
 } -> res);
-
-/// Convert a literal into a signed integer for the OCaml frontend
-#[inline]
-fn int_of_lit(lit: Lit) -> isize {
-    lit.var().idx() as isize * if lit.sign() { 1 } else { -1 }
-}
 
 caml!(ml_batsat_unsat_core, |ptr|, <res>, {
     with_solver!(solver, ptr, {
@@ -273,7 +267,7 @@ caml!(ml_batsat_get_proved, |ptr, idx|, <res>, {
     let i = idx.isize_val() as usize;
     with_solver!(solver, ptr, {
         let lit = solver.s.proved_at_lvl_0()[i];
-        let lit = lit.var().idx() as isize * if lit.sign() { 1 } else { -1 };
+        let lit = int_of_lit(lit);
         res = Value::isize(lit);
     })
 } -> res);

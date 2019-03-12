@@ -16,11 +16,6 @@ module Lit : sig
   val hash : t -> int
   val compare : t -> t -> int
 
-  val make : int -> t
-  (** [make n] creates the literal whose index is [n].
-      {b NOTE} [n] must be strictly positive. Use {!neg} to obtain
-      the negation of a literal. *)
-
   val neg : t -> t
   (** Negation of a literal.
       Invariant: [neg (neg x) = x] *)
@@ -56,6 +51,15 @@ val add_clause_a : t -> Lit.t array -> unit
 (** @raise Unsat if the problem is unsat *)
 
 val pp_clause : Lit.t list printer
+
+val fresh_lit : t -> Lit.t
+(** Allocate a fresh literal *)
+
+val lit_of_int : t -> int -> Lit.t
+(** [lit_of_int n] allocates literals until one whose index is [n] is reached.
+    Use {!Lit.neg} to obtain the negation of a literal.
+    @raise Invalid_argument if the integer is not positive.
+*)
 
 val simplify : t -> unit
 (** @raise Unsat if the problem is unsat *)

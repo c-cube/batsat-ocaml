@@ -19,7 +19,7 @@
   (libraries threads)
   (wrapped false)
   (modules batsat)
-  (flags :standard -safe-string -w @8)
+  (flags :standard -safe-string -warn-error -32)
   (c_library_flags :standard -ldl -lpthread) ; -lbatsat_c) ; -static)
   ;(modes native)
   (self_build_stubs_archive (batsat)) ; custom!

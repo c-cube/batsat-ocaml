@@ -8,7 +8,6 @@ type 'a printer = Format.formatter -> 'a -> unit
 (* use normal convention of positive/negative ints *)
 module Lit = struct
   type t = int
-  let make n = assert (n>0); n
   let neg n = -n
   let abs = abs
   let sign n = n > 0
@@ -32,6 +31,8 @@ module Raw = struct
 
   external simplify : t -> bool = "ml_batsat_simplify"
 
+  external lit_of_int : t -> int -> Lit.t = "ml_batsat_get_lit" [@@noalloc]
+  external fresh_lit : t -> Lit.t = "ml_batsat_fresh_lit" [@@noalloc]
   external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit" [@@noalloc]
   external assume : t -> Lit.t -> unit = "ml_batsat_assume" [@@noalloc]
   external solve : t -> bool = "ml_batsat_solve"
@@ -41,7 +42,7 @@ module Raw = struct
   external nconflicts : t -> int = "ml_batsat_nconflicts" [@@noalloc]
   external ndecisions : t -> int = "ml_batsat_ndecisions" [@@noalloc]
   external nprops : t -> int = "ml_batsat_nprops" [@@noalloc]
-(*   external nrestarts : t -> int "ml_batsat_nrestarts" [@@noalloc] *)
+  (*external nrestarts : t -> int "ml_batsat_nrestarts" [@@noalloc] *)
 
   external value : t -> Lit.t -> lbool = "ml_batsat_value" [@@noalloc]
   external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption" [@@noalloc]
@@ -91,6 +92,12 @@ let get_proved_lvl_0 = Raw.get_proved
 (* let n_restarts = Raw.nrestarts *)
 let n_props = Raw.nprops
 let n_decisions = Raw.ndecisions
+
+let lit_of_int s n =
+  if n <= 0 then invalid_arg "batsat.lit_of_int";
+  Raw.lit_of_int s n
+
+let fresh_lit = Raw.fresh_lit
 
 let proved_lvl_0 s =
   Array.init (n_proved_lvl_0 s) (get_proved_lvl_0 s)
