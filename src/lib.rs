@@ -89,6 +89,7 @@ macro_rules! with_solver {
 // NOTE: must mirror the order of fields in `batsat.ml/Theory`
 #[repr(u8)]
 enum RecordFields {
+    State,
     NLevels,
     PushLevel,
     PopLevels,
@@ -116,40 +117,46 @@ extern "C" fn batsat_no_op_finalizer(_v: ocaml::core::Value) {}
 
 impl batsat::Theory for Theory {
     fn final_check(&mut self, acts: &mut TheoryArg) {
+        let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::FinalCheck as usize);
         let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
-        unwrap_or_raise(f.call_exn(th_act));
+        unwrap_or_raise(f.call2_exn(st, th_act));
     }
 
     fn partial_check(&mut self, acts: &mut TheoryArg) {
         if self.value.field(RecordFields::HasPartialCheck as usize).isize_val() != 0 {
+            let st = self.value.field(RecordFields::State as usize);
             let f = self.value.field(RecordFields::PartialCheck as usize);
             let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
-            unwrap_or_raise(f.call_exn(th_act));
+            unwrap_or_raise(f.call2_exn(st, th_act));
         }
     }
 
     fn create_level(&mut self) {
+        let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::PushLevel as usize);
-        unwrap_or_raise(f.call_exn(value::UNIT));
+        unwrap_or_raise(f.call_exn(st));
     }
 
     fn pop_levels(&mut self, n: usize) {
+        let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::PopLevels as usize);
         let n = Value::isize(n as isize);
-        unwrap_or_raise(f.call_exn(n));
+        unwrap_or_raise(f.call2_exn(st, n));
     }
 
     fn n_levels(&self) -> usize {
+        let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::NLevels as usize);
-        let n = unwrap_or_raise(f.call_exn(value::UNIT));
+        let n = unwrap_or_raise(f.call_exn(st));
         n.isize_val() as usize
     }
 
     fn explain_propagation(&mut self, p: Lit) -> &[Lit] {
+        let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::ExplainProp as usize);
         let lits: ocaml::Array =
-            unwrap_or_raise(f.call_exn(Value::isize(int_of_lit(p)))).into();
+            unwrap_or_raise(f.call2_exn(st, Value::isize(int_of_lit(p)))).into();
         let n = lits.len();
         self.lits.clear();
         self.lits.reserve(n);

@@ -68,30 +68,34 @@ module TheoryArgument = struct
 end
 
 module Theory = struct
+  module Arg = TheoryArgument
+
   (* NOTE: order and types matter a lot here! see `lib.rs/RecordField` *)
-  type t = {
-    n_levels: unit -> int;
-    push_lvl: unit -> unit;
-    pop_levels: int -> unit;
+  type t = St : {
+    st: 'state;
+    n_levels: 'state -> int;
+    push_level: 'state -> unit;
+    pop_levels: 'state -> int -> unit;
     has_partial_check: bool;
-    partial_check: TheoryArgument.t -> unit;
-    final_check: TheoryArgument.t -> unit;
-    explain_prop: Lit.t -> Lit.t array;
-  }
+    partial_check: 'state -> TheoryArgument.t -> unit;
+    final_check: 'state -> TheoryArgument.t -> unit;
+    explain_prop: 'state -> Lit.t -> Lit.t array;
+  } -> t
 
   let make
       ~n_levels
-      ~push_lvl
+      ~push_level
       ~pop_levels
       ?partial_check
       ~final_check
-      ?(explain_prop=fun _ -> failwith "explain prop not implemented")
-      () : t =
+      ?(explain_prop=fun _ _ -> failwith "explain prop not implemented")
+      st : t =
     let partial_check, has_partial_check = match partial_check with
-      | None -> (fun _ -> ()), false
+      | None -> (fun _ _ -> ()), false
       | Some f -> f, true
     in
-    { n_levels; push_lvl; pop_levels; partial_check; has_partial_check;
+    St {
+      st; n_levels; push_level; pop_levels; partial_check; has_partial_check;
       final_check; explain_prop; }
 
   (* TODO: maybe constructor with first-class module? *)
@@ -144,6 +148,13 @@ let create_th (th:Theory.t) =
   Raw.set_th s th; (* before anything else *)
   Gc.finalise Raw.delete s;
   s
+
+let create_th_with (f: t -> _ * Theory.t) : _ * _ =
+  let s = Raw.create() in
+  let data, th = f s in
+  Raw.set_th s th;
+  Gc.finalise Raw.delete s;
+  data, s
 
 exception Unsat
 

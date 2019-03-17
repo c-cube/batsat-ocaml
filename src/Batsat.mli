@@ -60,15 +60,18 @@ module TheoryArgument : sig
 end
 
 module Theory : sig
+  module Arg = TheoryArgument
+
   type t
 
   val make:
-    n_levels:(unit -> int) ->
-    push_lvl:(unit -> unit) ->
-    pop_levels:(int -> unit) ->
-    ?partial_check:(TheoryArgument.t -> unit) ->
-    final_check:(TheoryArgument.t -> unit) ->
-    ?explain_prop:(int -> int array) -> unit -> t
+    n_levels:('state -> int) ->
+    push_level:('state -> unit) ->
+    pop_levels:('state -> int -> unit) ->
+    ?partial_check:('state -> TheoryArgument.t -> unit) ->
+    final_check:('state -> TheoryArgument.t -> unit) ->
+    ?explain_prop:('state -> int -> int array) ->
+    'state -> t
 end
 
 type assumptions = Lit.t array
@@ -76,6 +79,9 @@ type assumptions = Lit.t array
 val create : unit -> t
 
 val create_th : Theory.t -> t
+
+val create_th_with : (t -> 'a * Theory.t) -> 'a * t
+(** More general builder for recursive theory and solver *)
 
 val delete : t -> unit
 (** Release resources *)
