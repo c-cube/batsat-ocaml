@@ -1,0 +1,8 @@
+
+(executable
+  (name sudoku_solve)
+  (modes native)
+  (libraries batsat iter containers)
+  (flags :standard -color always -safe-string)
+  (ocamlopt_flags :standard -O3 -bin-annot
+                  -unbox-closures -unbox-closures-factor 20))

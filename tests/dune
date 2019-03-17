@@ -8,3 +8,9 @@
 (alias
   (name runtest)
   (action (run ./test1.exe)))
+
+(alias
+ (name runtest)
+ (deps ./../src/sudoku/sudoku_solve.exe Makefile (source_tree sudoku))
+ (locks test)
+ (action  (run make test-sudoku)))
