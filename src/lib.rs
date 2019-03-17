@@ -87,9 +87,9 @@ macro_rules! with_solver {
 }
 
 // NOTE: must mirror the order of fields in `batsat.ml/Theory`
-#[repr(u8)]
+#[repr(usize)]
 enum RecordFields {
-    State,
+    State = 0,
     NLevels,
     PushLevel,
     PopLevels,
@@ -105,10 +105,13 @@ fn unwrap_or_raise(x: Result<Value, ocaml::Error>) -> Value {
     match x {
         Ok(x) => x,
         Err(ocaml::Error::Exception(e)) => {
+            //println!("batsat: re-raise exn {:?}", e);
             ocaml::runtime::raise(e);
             value::UNIT
         },
-        Err(_) => unreachable!(),
+        Err(e) => {
+            panic!("batsat: ocaml call gives non-exn error {:?}", e)
+        }
     }
 }
 
@@ -117,17 +120,19 @@ extern "C" fn batsat_no_op_finalizer(_v: ocaml::core::Value) {}
 
 impl batsat::Theory for Theory {
     fn final_check(&mut self, acts: &mut TheoryArg) {
+        // alloc before dereferencing fields
+        let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
         let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::FinalCheck as usize);
-        let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
         unwrap_or_raise(f.call2_exn(st, th_act));
     }
 
     fn partial_check(&mut self, acts: &mut TheoryArg) {
         if self.value.field(RecordFields::HasPartialCheck as usize).isize_val() != 0 {
+            // alloc before dereferencing fields
+            let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
             let st = self.value.field(RecordFields::State as usize);
             let f = self.value.field(RecordFields::PartialCheck as usize);
-            let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
             unwrap_or_raise(f.call2_exn(st, th_act));
         }
     }
@@ -155,6 +160,8 @@ impl batsat::Theory for Theory {
     fn explain_propagation(&mut self, p: Lit) -> &[Lit] {
         let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::ExplainProp as usize);
+
+        // no alloc from there on
         let lits: ocaml::Array =
             unwrap_or_raise(f.call2_exn(st, Value::isize(int_of_lit(p)))).into();
         let n = lits.len();
@@ -174,7 +181,7 @@ fn delete_value(v: Value) {
         let s = unsafe { Box::from_raw(*v.custom_ptr_val_mut::<*mut Solver>()) };
         // unregister value from global root, if any
         if let Some(th) = &s.th {
-            th.value.remove_global_root();
+            Value::remove_global_root(& th.value);
         }
         mem::drop(s); // delete!
     }
@@ -200,7 +207,7 @@ caml!(ml_batsat_set_th, |ptr, th|, <res>, {
         assert!(solver.th.is_none()); // only once
         let th = Box::new(Theory::new(th));
         // ensure that `th.value` is a GC root
-        th.value.register_global_root();
+        Value::register_global_root(& th.value);
         solver.th = Some(th);
     })
 } -> res);
@@ -428,34 +435,42 @@ caml!(ml_batsat_arg_mk_lit, |ptr_a|, <res>, {
 
 caml!(ml_batsat_arg_raise_conflict, |ptr_a, c, costly|, <res>, {
     with_th_arg!(a, ptr_a, {
-        let c: ocaml::Array = c.into();
-        let n = c.len();
-        let mut clause = Vec::with_capacity(n);
-        for i in 0 .. n {
-            clause.push(lit_of_int(c.get(i).unwrap().isize_val() as i32));
+        if a.is_ok() {
+            let c: ocaml::Array = c.into();
+            let n = c.len();
+            let mut clause = Vec::with_capacity(n);
+            for i in 0 .. n {
+                let val = unwrap_or_raise(c.get(i));
+                clause.push(lit_of_int(val.isize_val() as i32));
+            }
+            a.raise_conflict(&clause, costly.isize_val() != 0);
         }
-        a.raise_conflict(&clause, costly.isize_val() != 0);
         res = value::UNIT;
     })
 } -> res);
 
 caml!(ml_batsat_arg_push_lemma, |ptr_a, c|, <res>, {
     with_th_arg!(a, ptr_a, {
-        let c: ocaml::Array = c.into();
-        let n = c.len();
-        let mut clause = Vec::with_capacity(n);
-        for i in 0 .. n {
-            clause.push(lit_of_int(c.get(i).unwrap().isize_val() as i32));
+        if a.is_ok() {
+            let c: ocaml::Array = c.into();
+            let n = c.len();
+            let mut clause = Vec::with_capacity(n);
+            for i in 0 .. n {
+                let val = unwrap_or_raise(c.get(i));
+                clause.push(lit_of_int(val.isize_val() as i32));
+            }
+            a.add_theory_lemma(&clause);
         }
-        a.add_theory_lemma(&clause);
         res = value::UNIT;
     })
 } -> res);
 
 caml!(ml_batsat_arg_propagate, |ptr_a, lit|, <res>, {
     with_th_arg!(a, ptr_a, {
-        let lit = lit_of_int(lit.isize_val() as i32);
-        a.propagate(lit);
+        if a.is_ok() {
+            let lit = lit_of_int(lit.isize_val() as i32);
+            a.propagate(lit);
+        }
         res = value::UNIT;
     })
 } -> res);

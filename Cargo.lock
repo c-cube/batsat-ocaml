@@ -1,7 +1,7 @@
 [[package]]
 name = "batsat"
 version = "0.3.1"
-source = "git+https://github.com/c-cube/batsat#81c825bcdb435bbb7a991aa0aa3b25683fba2504"
+source = "git+https://github.com/c-cube/batsat#3b91e4db79789b585714698e3b84c616c8e75d7f"
 dependencies = [
  "bit-vec 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",

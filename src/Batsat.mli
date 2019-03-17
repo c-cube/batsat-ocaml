@@ -9,6 +9,8 @@ type t
 type 'a iter = ('a -> unit) -> unit
 type 'a printer = Format.formatter -> 'a -> unit
 
+module Backtrackable_ref = Batsat_backtrackable_ref
+
 module Lit : sig
   type t = private int
   (** Some representation of literals that will be accepted by the SAT solver. *)
@@ -52,9 +54,9 @@ module TheoryArgument : sig
   val value : t -> Lit.t -> value
   val model_a : t -> Lit.t array
   val model_iter : t -> Lit.t iter
-  val raise_permanent_conflict : t -> Lit.t array -> unit
   val push_lemma : t -> Lit.t array -> unit
-  val raise_conflict : t -> Lit.t array -> unit
+  val raise_permanent_conflict : t -> Lit.t array -> 'a
+  val raise_conflict : t -> Lit.t array -> 'a
   val mk_lit : t -> Lit.t
   val propagate : t -> Lit.t -> unit
 end

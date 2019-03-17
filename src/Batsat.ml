@@ -6,6 +6,9 @@ type t
 type 'a iter = ('a -> unit) -> unit
 type 'a printer = Format.formatter -> 'a -> unit
 
+(** A backtrackable reference *)
+module Backtrackable_ref = Batsat_backtrackable_ref
+
 (* use normal convention of positive/negative ints *)
 module Lit = struct
   type t = int
@@ -38,13 +41,15 @@ let neg_value = function
   | V_false -> V_true
   | V_undef -> V_undef
 
+exception Exit_for_conflict
+
 module TheoryArgument = struct
   type t (* opaque *)
   type lbool = int
 
   external value_ : t -> Lit.t -> lbool = "ml_batsat_arg_value" [@@noalloc]
   external model_size_ : t -> int = "ml_batsat_arg_model_len" [@@noalloc]
-  external model_get_ : t -> int -> Lit.t = "ml_batsat_arg_model_len" [@@noalloc]
+  external model_get_ : t -> int -> Lit.t = "ml_batsat_arg_model_get" [@@noalloc]
   external raise_conflict_ : t -> Lit.t array -> bool -> unit = "ml_batsat_arg_raise_conflict"
 
   external mk_lit : t -> Lit.t = "ml_batsat_arg_mk_lit" [@@noalloc]
@@ -52,14 +57,17 @@ module TheoryArgument = struct
   external propagate : t -> Lit.t -> unit = "ml_batsat_arg_propagate" [@@noalloc]
 
   let[@inline] value a lit = mk_val (value_ a lit)
-  let[@inline] raise_conflict a c = raise_conflict_ a c false
-  let[@inline] raise_permanent_conflict a c = raise_conflict_ a c true
+  let[@inline] raise_conflict a c = raise_conflict_ a c false; raise_notrace Exit_for_conflict
+  let[@inline] raise_permanent_conflict a c = raise_conflict_ a c true; raise_notrace Exit_for_conflict
+
+  (* TODO: use a backtrackable ref to only provide new literals in partial_check *)
 
   (* as a sequence *)
   let[@specialise] model_iter a yield =
     let n = model_size_ a in
     for i = 0 to n-1 do
-      yield (model_get_ a i)
+      let lit = model_get_ a i in
+      yield lit
     done
 
   (* as an array *)
@@ -92,8 +100,11 @@ module Theory = struct
       st : t =
     let partial_check, has_partial_check = match partial_check with
       | None -> (fun _ _ -> ()), false
-      | Some f -> f, true
+      | Some f ->
+        let f' st a = try f st a with Exit_for_conflict -> () in
+        f', true
     in
+    let final_check st a = try final_check st a with Exit_for_conflict -> () in
     St {
       st; n_levels; push_level; pop_levels; partial_check; has_partial_check;
       final_check; explain_prop; }
