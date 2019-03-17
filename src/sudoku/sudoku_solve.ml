@@ -4,7 +4,7 @@
 module Fmt = CCFormat
 module Vec = CCVector
 module SAT = Batsat
-module B_ref = Backtrackable_ref
+module B_ref = Batsat_backtrackable_ref
 module BLit = SAT.Lit
 
 
@@ -177,6 +177,7 @@ end
       {sat; to_lit=F_tbl.create 32; of_lit =BLit_tbl.create 32}
 
     let lit_of_f (self:t) (f:F.t) : BLit.t =
+      (*Log.debugf 15 (fun k->k "(@[lit-of-form@ %a@])" F.pp f); *)
       let sign = F.sign f in
       let lit =
         let f_abs = F.abs f in
@@ -190,6 +191,7 @@ end
       if sign then lit else BLit.neg lit
 
     let f_of_lit (self:t) (lit:BLit.t) : F.t =
+      (*Log.debugf 15 (fun k->k "(@[form-of-lit@ %a@])" BLit.pp lit);*)
       let sign = BLit.sign lit in
       try F.apply_sign sign @@ BLit_tbl.find self.of_lit (BLit.abs lit)
       with Not_found -> errorf "no formula for literal %a" BLit.pp lit
@@ -226,6 +228,7 @@ end
              Log.debugf 4 (fun k->k "(@[add-clause@ %a@])" pp_c_ c);
              let c = Array.map (Lit_map.lit_of_f self.lm) c in
              SAT.TheoryArgument.push_lemma acts c;
+             Gc.compact();
            ))
 
     (* check constraints *)
@@ -253,6 +256,7 @@ end
       all_diff "rows" Grid.rows;
       all_diff "cols" Grid.cols;
       all_diff "squares" Grid.squares;
+      Log.debugf 4 (fun k->k "(sudoku.check.done)");
       ()
 
     let trail_ (self:t) (acts:SAT.TheoryArgument.t) = 
@@ -275,19 +279,22 @@ end
               let c = [|F.make false x y c; F.make false x y c'|] in
               logs_conflict "at-most-one" c;
               let c = Array.map (Lit_map.lit_of_f self.lm) c in
-              SAT.TheoryArgument.raise_conflict acts c
+              SAT.TheoryArgument.raise_conflict acts c;
             )
         )
 
     let partial_check (self:t) acts : unit =
-      Log.debugf 4
-        (fun k->k "(@[sudoku.partial-check@ :trail [@[%a@]]@])" (Fmt.seq F.pp) (trail_ self acts));
+      Log.debugf 4 (fun k->k "(sudoku.partial-check)");
+      Log.debugf 15
+        (fun k->k "(@[cur-trail [@[%a@]]@])" (Fmt.seq F.pp) (trail_ self acts));
       add_slice self acts;
+      Gc.compact();
       check_ self acts
 
     let final_check (self:t) acts : unit =
       Log.debugf 4 (fun k->k "(@[sudoku.final-check@])");
       check_full_ self acts;
+      Gc.compact();
       check_ self acts
   end
 
