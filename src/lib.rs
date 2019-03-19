@@ -106,7 +106,7 @@ fn unwrap_or_raise(x: Result<Value, ocaml::Error>) -> Value {
         Ok(x) => x,
         Err(ocaml::Error::Exception(e)) => {
             //println!("batsat: re-raise exn {:?}", e);
-            ocaml::runtime::raise(e);
+            ocaml::runtime::raise(&e);
             value::UNIT
         },
         Err(e) => {
@@ -231,7 +231,7 @@ caml!(ml_batsat_get_lit, |ptr, i|, <res>, {
     })
 } -> res);
 
-caml!(ml_batsat_fresh_lit, |ptr, i|, <res>, {
+caml!(ml_batsat_fresh_lit, |ptr|, <res>, {
     with_solver!(solver, ptr, {
         let lit = Lit::new(solver.s.new_var_default(), true);
         res = Value::isize(int_of_lit(lit));
@@ -286,6 +286,7 @@ caml!(ml_batsat_solve, |ptr|, <res>, {
         res = Value::bool(r);
     })
 } -> res);
+
 
 caml!(ml_batsat_value, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {

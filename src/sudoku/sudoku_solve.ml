@@ -228,7 +228,6 @@ end
              Log.debugf 4 (fun k->k "(@[add-clause@ %a@])" pp_c_ c);
              let c = Array.map (Lit_map.lit_of_f self.lm) c in
              SAT.TheoryArgument.push_lemma acts c;
-             Gc.compact();
            ))
 
     (* check constraints *)
@@ -288,14 +287,14 @@ end
       Log.debugf 15
         (fun k->k "(@[cur-trail [@[%a@]]@])" (Fmt.seq F.pp) (trail_ self acts));
       add_slice self acts;
-      Gc.compact();
-      check_ self acts
+      check_ self acts;
+      ()
 
     let final_check (self:t) acts : unit =
       Log.debugf 4 (fun k->k "(@[sudoku.final-check@])");
       check_full_ self acts;
-      Gc.compact();
-      check_ self acts
+      check_ self acts;
+      ()
   end
 
   let mk_theory g sat : Theory.t * SAT.Theory.t =
