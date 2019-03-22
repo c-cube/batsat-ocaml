@@ -6,18 +6,18 @@ extern crate ocaml;
 
 use {
     ocaml::{ToValue,Value,value },
-    std::{ptr, mem, ops, ops::DerefMut },
+    std::{ptr, mem, ops, },
     batsat::{Var,Lit,lbool,SolverInterface,BasicSolver as SatSolver,TheoryArg},
 };
 
-struct Theory {
-    value: Value, // OCaml record of functions
-    lits: Vec<Lit>,
+struct Theory<'a> {
+    value: &'a Value, // OCaml record of functions
+    lits: &'a mut Vec<Lit>,
 }
 
 struct Solver {
     s: SatSolver,
-    th: Option<Box<Theory>>,
+    lits: Vec<Lit>,
     cur_clause: Vec<Lit>,
     assumptions: Vec<Lit>,
 }
@@ -37,17 +37,11 @@ fn lit_of_int(lit: i32) -> Lit {
 }
 
 impl Solver {
-    fn new(th: Option<Box<Theory>>) -> Self {
+    fn new() -> Self {
         let s = SatSolver::default();
         Solver {
-            s, th, cur_clause: vec![], assumptions: vec![],
+            s, lits: vec!(), cur_clause: vec![], assumptions: vec![],
         }
-    }
-}
-
-impl Theory {
-    fn new(v: Value) -> Self {
-        Theory {value: v, lits: vec!(), }
     }
 }
 
@@ -118,7 +112,7 @@ fn unwrap_or_raise(x: Result<Value, ocaml::Error>) -> Value {
 /// Finalizer that does nothing
 extern "C" fn batsat_no_op_finalizer(_v: ocaml::core::Value) {}
 
-impl batsat::Theory for Theory {
+impl<'a> batsat::Theory for Theory<'a> {
     fn final_check(&mut self, acts: &mut TheoryArg) {
         // alloc before dereferencing fields
         let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
@@ -179,10 +173,6 @@ fn delete_value(v: Value) {
     if unsafe{ *v.custom_ptr_val::<*const Solver>() } != ptr::null() {
         //println!("delete value");
         let s = unsafe { Box::from_raw(*v.custom_ptr_val_mut::<*mut Solver>()) };
-        // unregister value from global root, if any
-        if let Some(th) = &s.th {
-            Value::remove_global_root(& th.value);
-        }
         mem::drop(s); // delete!
     }
     // be sure not to delete twice
@@ -197,19 +187,9 @@ extern "C" fn batsat_finalizer(v: ocaml::core::Value) {
 // ### SOLVER
 
 caml!(ml_batsat_new, |_params|, <res>, {
-    let solver = Box::new(Solver::new(None));
+    let solver = Box::new(Solver::new());
     let ptr = Box::into_raw(solver) as *mut Solver;
     res = Value::alloc_custom(ptr, batsat_finalizer);
-} -> res);
-
-caml!(ml_batsat_set_th, |ptr, th|, <res>, {
-    with_solver!(solver, ptr, {
-        assert!(solver.th.is_none()); // only once
-        let th = Box::new(Theory::new(th));
-        // ensure that `th.value` is a GC root
-        Value::register_global_root(& th.value);
-        solver.th = Some(th);
-    })
 } -> res);
 
 caml!(ml_batsat_delete, |param|, <res>, {
@@ -272,12 +252,8 @@ caml!(ml_batsat_assume, |ptr, lit|, <res>, {
 caml!(ml_batsat_solve, |ptr|, <res>, {
     with_solver!(solver, ptr, {
         let r = {
-            let Solver {s, th, assumptions, ..} = solver;
-            // call with or without theory
-            let lb = match th {
-                None => s.solve_limited(&assumptions),
-                Some(th) => s.solve_limited_th(th.deref_mut(), &assumptions),
-            };
+            let Solver {s, assumptions, ..} = solver;
+            let lb = s.solve_limited(&assumptions);
             assumptions.clear(); // reset assumptions
             assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
             lb != lbool::FALSE
@@ -287,6 +263,21 @@ caml!(ml_batsat_solve, |ptr|, <res>, {
     })
 } -> res);
 
+
+caml!(ml_batsat_solve_th, |ptr, th|, <res>, {
+    with_solver!(solver, ptr, {
+        let r = {
+            let Solver {s, assumptions, lits, ..} = solver;
+            let mut th = Theory{ value: &th, lits };
+            let lb = s.solve_limited_th(&mut th, &assumptions);
+            assumptions.clear(); // reset assumptions
+            assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
+            lb != lbool::FALSE
+        };
+        //println!("res: {:?}, model: {:?}", r, solver.get_model());
+        res = Value::bool(r);
+    })
+} -> res);
 
 caml!(ml_batsat_value, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {

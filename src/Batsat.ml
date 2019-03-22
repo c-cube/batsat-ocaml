@@ -1,8 +1,6 @@
 
 (* This file is free software. See file "license" for more details. *)
 
-type t
-
 type 'a iter = ('a -> unit) -> unit
 type 'a printer = Format.formatter -> 'a -> unit
 
@@ -113,15 +111,13 @@ module Theory = struct
 end
 
 module Raw = struct
+  type t
   type lbool = int (* 0,1,2 *)
   external create : unit -> t = "ml_batsat_new"
   external delete : t -> unit = "ml_batsat_delete"
 
   (* the [add_clause] functions return [false] if the clause
      immediately makes the problem unsat *)
-
-  (* only call on a new solver, without a theory *)
-  external set_th : t -> Theory.t -> unit = "ml_batsat_set_th"
 
   external simplify : t -> bool = "ml_batsat_simplify"
 
@@ -130,6 +126,7 @@ module Raw = struct
   external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit" [@@noalloc]
   external assume : t -> Lit.t -> unit = "ml_batsat_assume" [@@noalloc]
   external solve : t -> bool = "ml_batsat_solve"
+  external solve_th : t -> Theory.t -> bool = "ml_batsat_solve_th"
 
   external nvars : t -> int = "ml_batsat_nvars" [@@noalloc]
   external nclauses : t -> int = "ml_batsat_nclauses" [@@noalloc]
@@ -147,24 +144,27 @@ module Raw = struct
   external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0" [@@noalloc]
 end
 
-let create () =
-  let s = Raw.create() in
-  Gc.finalise Raw.delete s;
-  s
+type t = {
+  solver: Raw.t;
+  mutable th: Theory.t option;
+}
 
-let delete = Raw.delete
+let create () : t =
+  let solver = Raw.create() in
+  Gc.finalise Raw.delete solver;
+  {solver; th=None; }
 
-let create_th (th:Theory.t) =
-  let s = Raw.create() in
-  Raw.set_th s th; (* before anything else *)
-  Gc.finalise Raw.delete s;
-  s
+let delete s = Raw.delete s.solver
+
+let create_th (th:Theory.t) : t =
+  let solver = Raw.create() in
+  Gc.finalise Raw.delete solver;
+  {solver; th=Some th}
 
 let create_th_with (f: t -> _ * Theory.t) : _ * _ =
-  let s = Raw.create() in
+  let s = create() in
   let data, th = f s in
-  Raw.set_th s th;
-  Gc.finalise Raw.delete s;
+  s.th <- Some th;
   data, s
 
 exception Unsat
@@ -172,13 +172,13 @@ exception Unsat
 let check_ret_ b =
   if not b then raise Unsat
 
-let add_clause_a s lits =
-  Array.iter (fun x -> let r = Raw.add_lit s x in assert r) lits;
-  Raw.add_lit s 0 |> check_ret_
+let add_clause_a (s:t) lits =
+  Array.iter (fun x -> let r = Raw.add_lit s.solver x in assert r) lits;
+  Raw.add_lit s.solver 0 |> check_ret_
 
-let add_clause_l s lits =
-  List.iter (fun x -> let r = Raw.add_lit s x in assert r) lits;
-  Raw.add_lit s 0 |> check_ret_
+let add_clause_l (s:t) lits =
+  List.iter (fun x -> let r = Raw.add_lit s.solver x in assert r) lits;
+  Raw.add_lit s.solver 0 |> check_ret_
 
 let pp_clause out l =
   Format.fprintf out "[@[<hv>";
@@ -190,32 +190,35 @@ let pp_clause out l =
     l;
   Format.fprintf out "@]]"
 
-let simplify s = Raw.simplify s |> check_ret_
-let n_vars = Raw.nvars
-let n_clauses = Raw.nclauses
-let n_conflicts = Raw.nconflicts
-let n_proved_lvl_0 = Raw.n_proved
-let get_proved_lvl_0 = Raw.get_proved
+let[@inline] simplify (s:t) = Raw.simplify s.solver |> check_ret_
+let[@inline] n_vars (s:t) = Raw.nvars s.solver
+let[@inline] n_clauses (s:t) = Raw.nclauses s.solver
+let[@inline] n_conflicts (s:t) = Raw.nconflicts s.solver
+let[@inline] n_proved_lvl_0 (s:t) = Raw.n_proved s.solver
+let[@inline] get_proved_lvl_0 (s:t) = Raw.get_proved s.solver
 (* let n_restarts = Raw.nrestarts *)
-let n_props = Raw.nprops
-let n_decisions = Raw.ndecisions
+let[@inline] n_props (s:t) = Raw.nprops s.solver
+let[@inline] n_decisions (s:t) = Raw.ndecisions s.solver
 
-let lit_of_int s n =
+let lit_of_int (s:t)  n =
   if n <= 0 then invalid_arg "batsat.lit_of_int";
-  Raw.lit_of_int s n
+  Raw.lit_of_int s.solver n
 
-let fresh_lit = Raw.fresh_lit
+let fresh_lit (s:t) = Raw.fresh_lit s.solver
 
-let proved_lvl_0 s =
+let proved_lvl_0 (s:t)  =
   Array.init (n_proved_lvl_0 s) (get_proved_lvl_0 s)
 
-let solve ?(assumptions=[||]) s =
-  Array.iter (fun x -> Raw.assume s x) assumptions;
-  Raw.solve s |> check_ret_
+let solve ?(assumptions=[||]) (s:t)  =
+  Array.iter (fun x -> Raw.assume s.solver x) assumptions;
+  let res = match s.th with
+    | None -> Raw.solve s.solver
+    | Some th -> Raw.solve_th s.solver th
+  in
+  check_ret_ res
 
-let is_in_unsat_core s lit = Raw.check_assumption s lit
-
-let unsat_core = Raw.unsat_core
+let[@inline] is_in_unsat_core (s:t)  lit = Raw.check_assumption s.solver lit
+let[@inline] unsat_core (s:t) = Raw.unsat_core s.solver
 
 let string_of_value = function
   | V_undef -> "undef"
@@ -224,5 +227,5 @@ let string_of_value = function
 
 let pp_value out v = Format.pp_print_string out (string_of_value v)
 
-let value s lit = mk_val @@ Raw.value s lit
-let value_lvl_0 s lit = mk_val @@ Raw.value_lvl_0 s lit
+let value (s:t)  lit = mk_val @@ Raw.value s.solver lit
+let value_lvl_0 (s:t)  lit = mk_val @@ Raw.value_lvl_0 s.solver lit

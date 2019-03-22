@@ -21,7 +21,7 @@ icnf-solve: build
 # see https://github.com/ocaml/dune/issues/1407
 cargo-config-file:
 	@mkdir -p .cargo
-	@cat cargo-config > .cargo/config
+	#@cat cargo-config > .cargo/config
 
 CAML_LIB ?= $(shell ocamlc -where)
 
@@ -29,7 +29,8 @@ build-rust-stubs: cargo-config-file
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		RUSTFLAGS='-L $(CAML_LIB) -lcamlrun' cargo build --release --frozen ; \
 	else \
-		cargo build --release --frozen ; \
+		cargo build --release ; \
+		#cargo build --release --frozen ; \
   	fi
 
 all: build test
