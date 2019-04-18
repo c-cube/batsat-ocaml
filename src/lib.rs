@@ -121,7 +121,8 @@ extern "C" fn batsat_no_op_finalizer(_v: ocaml::core::Value) {}
 impl batsat::Theory for Theory {
     fn final_check(&mut self, acts: &mut TheoryArg) {
         // alloc before dereferencing fields
-        let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
+        caml_local!(th_act);
+        th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
         let st = self.value.field(RecordFields::State as usize);
         let f = self.value.field(RecordFields::FinalCheck as usize);
         unwrap_or_raise(f.call2_exn(st, th_act));
@@ -130,6 +131,7 @@ impl batsat::Theory for Theory {
     fn partial_check(&mut self, acts: &mut TheoryArg) {
         if self.value.field(RecordFields::HasPartialCheck as usize).isize_val() != 0 {
             // alloc before dereferencing fields
+            caml_local!(th_act);
             let th_act = Value::alloc_custom(acts, batsat_no_op_finalizer);
             let st = self.value.field(RecordFields::State as usize);
             let f = self.value.field(RecordFields::PartialCheck as usize);

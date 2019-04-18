@@ -8,7 +8,8 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 
-ocaml = "0.5"
+#ocaml = "^0.8"
+ocaml = {git = "https://github.com/zshipko/ocaml-rs.git"}
 #batsat = "^0.3"
 batsat = { git="https://github.com/c-cube/batsat" }
 
