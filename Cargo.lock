@@ -14,6 +14,7 @@ version = "0.1.0"
 dependencies = [
  "batsat 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ocaml 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ocaml-sys 0.12.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -32,7 +33,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "ocaml-derive 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ocaml-sys 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ocaml-sys 0.12.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -48,7 +49,7 @@ dependencies = [
 
 [[package]]
 name = "ocaml-sys"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "cty 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -102,7 +103,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum cty 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7313c0d620d0cb4dbd9d019e461a4beb501071ff46ec0ab933efb4daa76d73e3"
 "checksum ocaml 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f7867d37892fd192157938d1809005a7e8ce1e7bcaaeee3de3c6c3570a26a807"
 "checksum ocaml-derive 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)" = "76fe25a3995e92a2f4603331d1116879582019e9569c8eed4c95c87210550e27"
-"checksum ocaml-sys 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)" = "a63a5ff86f00fe4432f92192368ceeb54b153ab3c0ce9f0ede433611c8dd0864"
+"checksum ocaml-sys 0.12.2 (registry+https://github.com/rust-lang/crates.io-index)" = "147f701c6167b9dbcb38df017c274f8c09118727560a589241dc398596af42ab"
 "checksum proc-macro2 1.0.12 (registry+https://github.com/rust-lang/crates.io-index)" = "8872cf6f48eee44265156c111456a700ab3483686b3f96df4cf5481c89157319"
 "checksum quote 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "4c1f4b0efa5fc5e8ceb705136bfee52cfdb6a4e3509f770b478cd6ed434232a7"
 "checksum syn 1.0.19 (registry+https://github.com/rust-lang/crates.io-index)" = "e8e5aa70697bb26ee62214ae3288465ecec0000f05182f039b477001f08f5ae7"
