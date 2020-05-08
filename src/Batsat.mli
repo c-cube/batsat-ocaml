@@ -44,9 +44,6 @@ type assumptions = Lit.t array
 
 val create : unit -> t
 
-val delete : t -> unit
-(** Release resources *)
-
 exception Unsat
 
 val add_clause_l : t -> Lit.t list -> unit

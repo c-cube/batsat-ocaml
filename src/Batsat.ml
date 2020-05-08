@@ -25,7 +25,6 @@ type assumptions = Lit.t array
 module Raw = struct
   type lbool = int (* 0,1,2 *)
   external create : unit -> t = "ml_batsat_new"
-  external delete : t -> unit = "ml_batsat_delete"
 
   (* the [add_clause] functions return [false] if the clause
      immediately makes the problem unsat *)
@@ -54,10 +53,7 @@ end
 
 let create () =
   let s = Raw.create() in
-  Gc.finalise Raw.delete s;
   s
-
-let delete = Raw.delete
 
 exception Unsat
 
