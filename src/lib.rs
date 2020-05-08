@@ -5,13 +5,13 @@ extern crate ocaml;
 use ocaml::{Pointer, Value};
 use std::default::Default;
 
-use std::mem;
 use std::ops;
-use std::ptr;
 
 use batsat::{lbool, BasicSolver as InnerSolver, Lit, SolverInterface, Var};
 
-pub struct Solver {
+pub struct Solver(Box<SolverImpl>);
+
+struct SolverImpl {
     s: InnerSolver,
     vars: Vec<Var>, // int->var
     cur_clause: Vec<Lit>,
@@ -45,26 +45,30 @@ unsafe extern "C" fn delete_solver_value(v: Value) {
 
 impl Solver {
     fn new() -> Self {
-        Solver {
+        Solver(Box::new(SolverImpl {
             s: InnerSolver::default(),
             vars: Vec::new(),
             cur_clause: vec![],
             assumptions: vec![],
-        }
+        }))
     }
 }
 
 impl Solver {
     fn decompose(&mut self) -> (&mut InnerSolver, &mut Vec<Lit>, &mut Vec<Lit>) {
-        (&mut self.s, &mut self.cur_clause, &mut self.assumptions)
+        (
+            &mut self.0.s,
+            &mut self.0.cur_clause,
+            &mut self.0.assumptions,
+        )
     }
 
     /// Allocate variables until we get the one corresponding to `x`
     fn get_var(&mut self, x: usize) -> Var {
-        while x >= self.vars.len() {
-            self.vars.push(self.s.new_var_default());
+        while x >= self.0.vars.len() {
+            self.0.vars.push(self.0.s.new_var_default());
         }
-        self.vars[x]
+        self.0.vars[x]
     }
 
     #[inline]
@@ -78,13 +82,13 @@ impl Solver {
 impl ops::Deref for Solver {
     type Target = InnerSolver;
     fn deref(&self) -> &Self::Target {
-        &self.s
+        &self.0.s
     }
 }
 
 impl ops::DerefMut for Solver {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.s
+        &mut self.0.s
     }
 }
 
@@ -116,7 +120,7 @@ pub fn ml_batsat_addlit(mut solver: Pointer<Solver>, lit: isize) -> bool {
         // push literal into clause
         let lit = solver.get_lit(lit);
         //println!("add-lit {:?}", lit);
-        solver.cur_clause.push(lit);
+        solver.0.cur_clause.push(lit);
     }
     r
 }
@@ -127,7 +131,7 @@ pub fn ml_batsat_assume(mut solver: Pointer<Solver>, lit: isize) {
     let solver = solver.as_mut();
     assert!(lit != 0);
     let lit = solver.get_lit(lit);
-    solver.assumptions.push(lit);
+    solver.0.assumptions.push(lit);
 }
 
 #[ocaml::func]
@@ -151,7 +155,7 @@ pub fn ml_batsat_value(mut solver: Pointer<Solver>, lit: isize) -> isize {
         lbool::UNDEF
     } else {
         let lit = solver.get_lit(lit);
-        solver.s.value_lit(lit)
+        solver.0.s.value_lit(lit)
     };
     r.to_u8() as isize
 }
@@ -163,7 +167,7 @@ pub fn ml_batsat_value_lvl_0(mut solver: Pointer<Solver>, lit: isize) -> isize {
         lbool::UNDEF
     } else {
         let lit = solver.get_lit(lit);
-        solver.s.value_lvl_0(lit)
+        solver.0.s.value_lvl_0(lit)
     };
     //println!("val for {:?}: {:?}", lit, r);
     r.to_u8() as isize
@@ -175,7 +179,7 @@ pub fn ml_batsat_check_assumption(mut solver: Pointer<Solver>, lit: isize) -> bo
 
     // check unsat-core
     let lit = solver.get_lit(lit);
-    solver.s.unsat_core_contains_var(lit.var())
+    solver.0.s.unsat_core_contains_var(lit.var())
 }
 
 /// Convert a literal into a signed integer for the OCaml frontend
@@ -188,6 +192,7 @@ fn int_of_lit(lit: Lit) -> isize {
 pub fn ml_batsat_unsat_core(solver: Pointer<Solver>) -> Vec<isize> {
     let solver = solver.as_ref();
     let core = solver
+        .0
         .s
         .unsat_core()
         .iter()
@@ -199,31 +204,31 @@ pub fn ml_batsat_unsat_core(solver: Pointer<Solver>) -> Vec<isize> {
 #[ocaml::func]
 pub fn ml_batsat_nvars(solver: Pointer<Solver>) -> isize {
     let solver = solver.as_ref();
-    solver.s.num_vars() as isize
+    solver.0.s.num_vars() as isize
 }
 
 #[ocaml::func]
 pub fn ml_batsat_nclauses(solver: Pointer<Solver>) -> isize {
     let solver = solver.as_ref();
-    solver.s.num_clauses() as isize
+    solver.0.s.num_clauses() as isize
 }
 
 #[ocaml::func]
 pub fn ml_batsat_nconflicts(solver: Pointer<Solver>) -> isize {
     let solver = solver.as_ref();
-    solver.s.num_conflicts() as isize
+    solver.0.s.num_conflicts() as isize
 }
 
 #[ocaml::func]
 pub fn ml_batsat_nprops(solver: Pointer<Solver>) -> isize {
     let solver = solver.as_ref();
-    solver.s.num_propagations() as isize
+    solver.0.s.num_propagations() as isize
 }
 
 #[ocaml::func]
 pub fn ml_batsat_ndecisions(solver: Pointer<Solver>) -> isize {
     let solver = solver.as_ref();
-    solver.s.num_decisions() as isize
+    solver.0.s.num_decisions() as isize
 }
 
 /*
@@ -238,13 +243,13 @@ caml!(ml_batsat_nrestarts, |ptr|, <res>, {
 #[ocaml::func]
 pub fn ml_batsat_n_proved(solver: Pointer<Solver>) -> isize {
     let solver = solver.as_ref();
-    solver.s.proved_at_lvl_0().len() as isize
+    solver.0.s.proved_at_lvl_0().len() as isize
 }
 
 #[ocaml::func]
 pub fn ml_batsat_get_proved(solver: Pointer<Solver>, i: usize) -> isize {
     let solver = solver.as_ref();
-    let lit = solver.s.proved_at_lvl_0()[i];
+    let lit = solver.0.s.proved_at_lvl_0()[i];
     let lit = lit.var().idx() as isize * if lit.sign() { 1 } else { -1 };
     lit
 }
