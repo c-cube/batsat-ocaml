@@ -1,6 +1,7 @@
+use {crate::clause::Lit, std::default::Default};
 
-use std::default::Default;
-use crate::clause::{Var,Lit,lbool};
+/// Argument passed to the Theory
+pub use crate::core::TheoryArg;
 
 /// Theory that parametrizes the solver and can react on events.
 pub trait Theory {
@@ -10,7 +11,7 @@ pub trait Theory {
     /// If the partial model isn't satisfiable in the theory then
     /// this *must* call `acts.raise_conflict` with a valid lemma that is
     /// the negation of a subset of the `model`.
-    fn final_check<'a, S>(&mut self, acts: &mut S) where S: TheoryArgument;
+    fn final_check(&mut self, acts: &mut TheoryArg);
 
     /// Push a new backtracking level
     fn create_level(&mut self);
@@ -32,8 +33,7 @@ pub trait Theory {
     /// The model will be checked again in `final_check`.
     ///
     /// The default implementation just returns without doing anything.
-    fn partial_check<S>(&mut self, _acts: &mut S) where S: TheoryArgument {}
-
+    fn partial_check(&mut self, _acts: &mut TheoryArg) {}
 
     /// If the theory uses `TheoryArgument::propagate`, it must implement
     /// this function to explain the propagations.
@@ -43,80 +43,36 @@ pub trait Theory {
     fn explain_propagation(&mut self, _p: Lit) -> &[Lit];
 }
 
-/// Interface provided to the theory.
-///
-/// This is where the theory can perform actions such as adding clauses.
-pub trait TheoryArgument {
-    /// Current (possibly partial) model
-    fn model(&self) -> &[Lit];
-
-    /// Allocate a new literal
-    fn mk_new_lit(&mut self) -> Lit;
-
-    /// Push a theory lemma into the solver.
-    ///
-    /// This is useful for lemma-on-demand or theory splitting, but can
-    /// be relatively costly.
-    ///
-    /// NOTE: This is not fully supported yet.
-    fn add_theory_lemma(&mut self, c: &[Lit]);
-
-    /// Propagate the literal `p`, which is theory-implied by the current trail.
-    ///
-    /// This will add `p` on the trail. The theory must be ready to
-    /// provide an explanation via `Theory::explain_prop(p)` if asked to
-    /// during conflict resolution.
-    ///
-    /// Returns `true` if propagation succeeded (or did nothing), `false`
-    /// if the propagation results in an immediate conflict.
-    /// If this returns `false`, the theory should avoid doing more work and
-    /// return as early as reasonably possible.
-    fn propagate(&mut self, p: Lit) -> bool;
-
-    /// Add a conflict clause.
-    ///
-    /// This should be used in the theory when the current partial model
-    /// is unsatisfiable. It will force the SAT solver to backtrack.
-    /// All propagations added with `propagate` during this session
-    /// will be discarded.
-    ///
-    /// ## Params
-    /// - `lits` a clause that is a tautology of the theory (ie a lemma)
-    ///     and that is false in the current (partial) model.
-    /// - `costly` if true, indicates that the conflict `c` was costly to produce.
-    ///     This is a hint for the SAT solver to keep the theory lemma that corresponds
-    ///     to `c` along with the actual learnt clause.
-    fn raise_conflict(&mut self, lits: &[Lit], costly: bool);
-
-    /// Value of given var in current model
-    #[inline(always)]
-    fn value(&self, v: Var) -> lbool;
-
-    /// Value of given literal in current model
-    #[inline(always)]
-    fn value_lit(&self, lit: Lit) -> lbool;
-}
-
 /// Trivial theory that does nothing
 pub struct EmptyTheory(usize);
 
 impl EmptyTheory {
     /// New empty theory.
-    pub fn new() -> Self { EmptyTheory(0) }
+    pub fn new() -> Self {
+        EmptyTheory(0)
+    }
 }
 
 impl Default for EmptyTheory {
-    fn default() -> Self { EmptyTheory::new() }
+    fn default() -> Self {
+        EmptyTheory::new()
+    }
 }
 
 // theory for any context.
 impl Theory for EmptyTheory {
-    fn final_check<S>(&mut self, _: &mut S) where S: TheoryArgument { }
-    fn create_level(&mut self) { self.0 += 1 }
+    fn final_check(&mut self, _: &mut TheoryArg) {}
+    fn create_level(&mut self) {
+        self.0 += 1
+    }
     fn pop_levels(&mut self, n: usize) {
         debug_assert!(self.0 >= n);
         self.0 -= n
     }
-    fn n_levels(&self) -> usize { self.0 }
-    fn explain_propagation(&mut self, _p: Lit) -> &[Lit] { unreachable!() }
+    fn n_levels(&self) -> usize {
+        self.0
+    }
+    fn explain_propagation(&mut self, _p: Lit) -> &[Lit] {
+        unreachable!()
+    }
 }

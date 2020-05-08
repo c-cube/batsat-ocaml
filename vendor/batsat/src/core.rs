@@ -20,20 +20,21 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 
 use {
-    std::{
-        cmp, i32, f64, mem, fmt,
-        sync::atomic::{Ordering,AtomicBool},
-    },
-    crate::intmap::{Comparator, Heap, HeapData},
+    crate::callbacks::{Callbacks, ProgressStatus},
     crate::clause::{
-        self, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
-        VMap, lbool, Lit, Var},
-    crate::callbacks::{Callbacks,ProgressStatus},
-    crate::theory::{Theory,TheoryArgument,},
+        self, lbool, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, Lit, OccLists,
+        OccListsData, VMap, Var,
+    },
     crate::interface::SolverInterface,
+    crate::intmap::{Comparator, Heap, HeapData},
+    crate::theory::Theory,
+    std::{
+        cmp, f64, fmt, i32, mem,
+        sync::atomic::{AtomicBool, Ordering},
+    },
 };
 
-#[cfg(feature="logging")]
+#[cfg(feature = "logging")]
 use crate::clause::display::Print;
 
 /// The main solver structure
@@ -42,7 +43,7 @@ use crate::clause::display::Print;
 /// a clause allocator, literals, clauses, and statistics.
 ///
 /// It is parametrized by `Callbacks`
-pub struct Solver<Cb : Callbacks> {
+pub struct Solver<Cb: Callbacks> {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
     model: Vec<lbool>,
@@ -59,7 +60,7 @@ pub struct Solver<Cb : Callbacks> {
     learnts: Vec<CRef>,
 
     v: SolverV,
-    tmp_c_th: Vec<Lit>, // used for theory conflict
+    tmp_c_th: Vec<Lit>,     // used for theory conflict
     tmp_c_add_cl: Vec<Lit>, // used for adding clauses during search
 }
 
@@ -186,7 +187,7 @@ struct SolverV {
     // Temporaries (to reduce allocation overhead). Each variable is prefixed by the method in which it is
     // used, except `seen` wich is used in several places.
     seen: VMap<Seen>,
-    minimize_stack: Vec<ShrinkStackElem>,
+    minimize_stack: Vec<Lit>,
     analyze_toclear: Vec<Lit>,
 
     // Resource contraints:
@@ -206,8 +207,8 @@ impl TheoryState {
     // new state
     fn new() -> Self {
         TheoryState {
-            lemma_lits: vec!(),
-            lemma_offsets: vec!(),
+            lemma_lits: vec![],
+            lemma_offsets: vec![],
         }
     }
 
@@ -218,12 +219,12 @@ impl TheoryState {
 
     fn push_lemma(&mut self, lits: &[Lit]) {
         let idx = self.lemma_lits.len();
-        self.lemma_offsets.push((idx,lits.len()));
+        self.lemma_offsets.push((idx, lits.len()));
         self.lemma_lits.extend_from_slice(lits);
     }
 
     /// Iterate over the clauses contained in this theory state
-    fn iter_lemmas<'a>(&'a mut self) -> impl Iterator<Item=&'a [Lit]> + 'a {
+    fn iter_lemmas<'a>(&'a mut self) -> impl Iterator<Item = &'a [Lit]> + 'a {
         theory_st::LIter(self, 0)
     }
 }
@@ -235,14 +236,14 @@ mod theory_st {
     pub(super) struct LIter<'a>(pub &'a TheoryState, pub usize);
 
     impl<'a> Iterator for LIter<'a> {
-        type Item=&'a [Lit];
+        type Item = &'a [Lit];
         fn next(&mut self) -> Option<Self::Item> {
             if self.1 >= self.0.lemma_offsets.len() {
                 None
             } else {
-                let (offset,len) = self.0.lemma_offsets[self.1];
+                let (offset, len) = self.0.lemma_offsets[self.1];
                 self.1 += 1;
-                let c = &self.0.lemma_lits[offset .. offset + len];
+                let c = &self.0.lemma_lits[offset..offset + len];
                 Some(c)
             }
         }
@@ -250,7 +251,7 @@ mod theory_st {
 }
 ///
 /// Print the model/proof as DIMACS
-pub struct SolverPrintDimacs<'a, Cb:Callbacks+'a> {
+pub struct SolverPrintDimacs<'a, Cb: Callbacks + 'a> {
     s: &'a Solver<Cb>,
     model: bool, // model or proof
 }
@@ -258,13 +259,16 @@ pub struct SolverPrintDimacs<'a, Cb:Callbacks+'a> {
 mod dimacs {
     use super::*;
 
-    impl<'a, Cb:Callbacks> fmt::Display for SolverPrintDimacs<'a, Cb> {
+    impl<'a, Cb: Callbacks> fmt::Display for SolverPrintDimacs<'a, Cb> {
         fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
             if self.model {
                 write!(out, "v ")?;
                 for (i, &val) in self.s.model.iter().enumerate() {
-                    if val == lbool::TRUE && i>0 { write!(out, "{} ", i+1)? }
-                    else if val == lbool::FALSE && i>0 { write!(out, "-{} ", i+1)? }
+                    if val == lbool::TRUE && i > 0 {
+                        write!(out, "{} ", i + 1)?
+                    } else if val == lbool::FALSE && i > 0 {
+                        write!(out, "-{} ", i + 1)?
+                    }
                 }
                 writeln!(out, "0")
             } else {
@@ -275,7 +279,7 @@ mod dimacs {
 }
 
 // public API
-impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
+impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
     fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
         self.v.new_var(upol, dvar)
     }
@@ -284,15 +288,28 @@ impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
         self.new_var(lbool::UNDEF, true)
     }
 
+    fn var_of_int(&mut self, v_idx: u32) -> Var {
+        while v_idx >= self.num_vars() {
+            self.new_var_default();
+        }
+        let var = Var::from_idx(v_idx);
+        debug_assert_eq!(var.idx(), v_idx);
+        var
+    }
+
     // in the API, we can only add clauses at level 0
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         debug!("add toplevel clause {:?}", clause);
-        debug_assert_eq!(self.v.decision_level(), 0, "add clause at non-zero decision level");
+        debug_assert_eq!(
+            self.v.decision_level(),
+            0,
+            "add clause at non-zero decision level"
+        );
         clause.sort_unstable();
         self.add_clause_(clause)
     }
 
-    fn solve_limited_th<Th:Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
+    fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
         self.asynch_interrupt.store(false, Ordering::SeqCst);
         self.v.assumptions.clear();
         self.v.assumptions.extend_from_slice(assumps);
@@ -300,43 +317,61 @@ impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
     }
 
     #[inline(always)]
-    fn simplify_th<Th:Theory>(&mut self, th: &mut Th) -> bool { self.simplify_internal(th) }
+    fn simplify_th<Th: Theory>(&mut self, th: &mut Th) -> bool {
+        self.simplify_internal(th)
+    }
 
     fn value_var(&self, v: Var) -> lbool {
-        self.model.get(v.idx() as usize).map_or(lbool::UNDEF, |&v| v)
+        self.model
+            .get(v.idx() as usize)
+            .map_or(lbool::UNDEF, |&v| v)
     }
-    fn value_lit(&self, v: Lit) -> lbool { self.value_var(v.var()) ^ !v.sign() }
-    fn get_model(&self) -> &[lbool] { &self.model }
-    fn is_ok(&self) -> bool { self.v.ok }
+    fn value_lit(&self, v: Lit) -> lbool {
+        self.value_var(v.var()) ^ !v.sign()
+    }
+    fn get_model(&self) -> &[lbool] {
+        &self.model
+    }
+    fn is_ok(&self) -> bool {
+        self.v.ok
+    }
 
-    fn num_vars(&self) -> u32 { self.v.num_vars() }
-    fn num_clauses(&self) -> u64 { self.v.num_clauses() }
-    fn num_conflicts(&self) -> u64 { self.v.num_conflicts() }
-    fn num_propagations(&self) -> u64 { self.v.num_props() }
-    fn num_decisions(&self) -> u64 { self.v.decisions }
-    fn num_restarts(&self) -> u64 { self.v.starts }
+    fn num_vars(&self) -> u32 {
+        self.v.num_vars()
+    }
+    fn num_clauses(&self) -> u64 {
+        self.v.num_clauses()
+    }
+    fn num_conflicts(&self) -> u64 {
+        self.v.num_conflicts()
+    }
+    fn num_propagations(&self) -> u64 {
+        self.v.num_props()
+    }
+    fn num_decisions(&self) -> u64 {
+        self.v.decisions
+    }
+    fn num_restarts(&self) -> u64 {
+        self.v.starts
+    }
 
     fn value_lvl_0(&self, lit: Lit) -> lbool {
         let mut res = self.v.value_lit(lit);
-        if self.v.level(lit.var()) != 0 { res = lbool::UNDEF; }
+        if self.v.level(lit.var()) != 0 {
+            res = lbool::UNDEF;
+        }
         res
     }
 
     fn print_stats(&self) {
         println!("c restarts              : {}", self.v.starts);
-        println!(
-            "c conflicts             : {:<12}",
-            self.v.conflicts
-        );
+        println!("c conflicts             : {:<12}", self.v.conflicts);
         println!(
             "c decisions             : {:<12}   ({:4.2} % random)",
             self.v.decisions,
             self.v.rnd_decisions as f32 * 100.0 / self.v.decisions as f32
         );
-        println!(
-            "c propagations          : {:<12}",
-            self.v.propagations
-        );
+        println!("c propagations          : {:<12}", self.v.propagations);
         println!(
             "c conflict literals     : {:<12}   ({:4.2} % deleted)",
             self.v.tot_literals,
@@ -354,20 +389,21 @@ impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
 
     fn unsat_core_contains_var(&self, v: Var) -> bool {
         let lit = Lit::new(v, true);
-        self.unsat_core_contains_lit(lit)
-            || self.unsat_core_contains_lit(!lit)
+        self.unsat_core_contains_lit(lit) || self.unsat_core_contains_lit(!lit)
     }
 
-    fn proved_at_lvl_0(&self) -> &[Lit] { self.v.vars.proved_at_lvl_0() }
+    fn proved_at_lvl_0(&self) -> &[Lit] {
+        self.v.vars.proved_at_lvl_0()
+    }
 }
 
-impl<Cb:Callbacks+Default> Default for Solver<Cb> {
+impl<Cb: Callbacks + Default> Default for Solver<Cb> {
     fn default() -> Self {
         Solver::new(SolverOpts::default(), Default::default())
     }
 }
 
-impl<Cb:Callbacks> Solver<Cb> {
+impl<Cb: Callbacks> Solver<Cb> {
     /// Create a new solver with the given options and default callbacks
     pub fn new(opts: SolverOpts, cb: Cb) -> Self {
         Solver::new_with(opts, cb)
@@ -375,10 +411,13 @@ impl<Cb:Callbacks> Solver<Cb> {
 }
 
 // partial check, or final check?
-enum TheoryCall { Partial, Final }
+enum TheoryCall {
+    Partial,
+    Final,
+}
 
 // main algorithm
-impl<Cb:Callbacks> Solver<Cb> {
+impl<Cb: Callbacks> Solver<Cb> {
     /// Create a new solver with the given options and callbacks.
     pub fn new_with(opts: SolverOpts, cb: Cb) -> Self {
         assert!(opts.check());
@@ -391,18 +430,21 @@ impl<Cb:Callbacks> Solver<Cb> {
             learnts: vec![],
             asynch_interrupt: AtomicBool::new(false),
             v: SolverV::new(&opts),
-            tmp_c_th: vec!(),
-            tmp_c_add_cl: vec!(),
+            tmp_c_th: vec![],
+            tmp_c_add_cl: vec![],
         }
     }
 
     /// Begins a new decision level.
-    fn new_decision_level<Th:Theory>(&mut self, th: &mut Th) {
-        trace!("new decision level {}", 1+self.v.decision_level());
+    fn new_decision_level<Th: Theory>(&mut self, th: &mut Th) {
+        trace!("new decision level {}", 1 + self.v.decision_level());
         self.v.vars.new_decision_level();
         th.create_level();
-        debug_assert_eq!(self.v.decision_level() as usize, th.n_levels(),
-            "same number of levels for theory and trail");
+        debug_assert_eq!(
+            self.v.decision_level() as usize,
+            th.n_levels(),
+            "same number of levels for theory and trail"
+        );
     }
 
     fn simplify_internal<Th>(&mut self, _: &mut Th) -> bool {
@@ -441,11 +483,11 @@ impl<Cb:Callbacks> Solver<Cb> {
     ///    all variables are decision variables, this means that the clause set is satisfiable.
     /// - `lbool::FALSE` if the clause set is unsatisfiable.
     /// - 'lbool::UNDEF` if the bound on number of conflicts is reached.
-    fn search<Th:Theory>(
+    fn search<Th: Theory>(
         &mut self,
         th: &mut Th,
         nof_conflicts: i32,
-        tmp_learnt: &mut Vec<Lit>
+        tmp_learnt: &mut Vec<Lit>,
     ) -> lbool {
         debug_assert!(self.v.ok);
         let mut conflict_c = 0;
@@ -463,9 +505,9 @@ impl<Cb:Callbacks> Solver<Cb> {
                     return lbool::FALSE;
                 }
 
-                let learnt =
-                    self.v.analyze(Conflict::BCP(confl), &self.learnts,
-                    tmp_learnt, th);
+                let learnt = self
+                    .v
+                    .analyze(Conflict::BCP(confl), &self.learnts, tmp_learnt, th);
                 self.add_learnt_and_backtrack(th, learnt, clause::Kind::Learnt);
 
                 self.v.vars.var_decay_activity();
@@ -477,24 +519,23 @@ impl<Cb:Callbacks> Solver<Cb> {
                     self.v.learntsize_adjust_cnt = self.v.learntsize_adjust_confl as i32;
                     self.v.max_learnts *= self.v.learntsize_inc;
 
-                    let trail_lim_head = self.v.vars
+                    let trail_lim_head = self
+                        .v
+                        .vars
                         .trail_lim
                         .first()
                         .cloned()
                         .unwrap_or(self.v.vars.trail.len() as i32);
                     let v = &self.v;
-                    self.cb.on_progress(|| {
-                        ProgressStatus {
-                            conflicts: v.conflicts as i32,
-                            dec_vars: v.dec_vars as i32 - trail_lim_head,
-                            n_clauses: v.num_clauses(),
-                            n_clause_lits: v.clauses_literals as i32,
-                            max_learnt: v.max_learnts as i32,
-                            n_learnt: v.num_learnts(),
-                            n_learnt_lits:
-                                v.learnts_literals as f64 / v.num_learnts as f64,
-                                progress_estimate: v.progress_estimate() * 100.0,
-                        }
+                    self.cb.on_progress(|| ProgressStatus {
+                        conflicts: v.conflicts as i32,
+                        dec_vars: v.dec_vars as i32 - trail_lim_head,
+                        n_clauses: v.num_clauses(),
+                        n_clause_lits: v.clauses_literals as i32,
+                        max_learnt: v.max_learnts as i32,
+                        n_learnt: v.num_learnts(),
+                        n_learnt_lits: v.learnts_literals as f64 / v.num_learnts as f64,
+                        progress_estimate: v.progress_estimate() * 100.0,
                     });
                 }
             } else {
@@ -522,7 +563,7 @@ impl<Cb:Callbacks> Solver<Cb> {
 
                     if th_res == lbool::UNDEF {
                         // some theory propagations, do not decide yet
-                        continue 'main
+                        continue 'main;
                     } else if th_res == lbool::FALSE {
                         // conflict, we backtracked and propagated a SAT literal
                         self.v.conflicts += 1;
@@ -565,7 +606,7 @@ impl<Cb:Callbacks> Solver<Cb> {
                             return lbool::TRUE;
                         } else if th_res == lbool::UNDEF {
                             // some propagations in final-check
-                            continue 'main
+                            continue 'main;
                         } else {
                             assert_eq!(th_res, lbool::FALSE);
                             // conflict, we backtracked and propagated a SAT literal
@@ -591,8 +632,11 @@ impl<Cb:Callbacks> Solver<Cb> {
     }
 
     /// Add a learnt clause and backtrack/propagate as necessary
-    fn add_learnt_and_backtrack<Th:Theory>(
-        &mut self, th: &mut Th, learnt: LearntClause, k: clause::Kind
+    fn add_learnt_and_backtrack<Th: Theory>(
+        &mut self,
+        th: &mut Th,
+        learnt: LearntClause,
+        k: clause::Kind,
     ) {
         self.cb.on_new_clause(&learnt.clause, k);
         self.cancel_until(th, learnt.backtrack_lvl as u32);
@@ -615,7 +659,7 @@ impl<Cb:Callbacks> Solver<Cb> {
         if learnt.add_orig {
             debug!("add original lemma {:?}", learnt.orig_lits);
             // add theory lemma too, it was deemed costly to produce
-            let mut c = vec!();
+            let mut c = vec![];
             mem::swap(&mut c, &mut self.tmp_c_add_cl);
             c.clear();
             c.extend_from_slice(learnt.orig_lits);
@@ -629,13 +673,16 @@ impl<Cb:Callbacks> Solver<Cb> {
     /// Returns `UNDEF` if the theory propagated something, `TRUE` if
     /// the theory accepted the model without propagations, and `FALSE` if
     /// the theory rejected the model.
-    fn call_theory<Th:Theory>(
-        &mut self, th: &mut Th, k: TheoryCall, tmp_learnt: &mut Vec<Lit>
+    fn call_theory<Th: Theory>(
+        &mut self,
+        th: &mut Th,
+        k: TheoryCall,
+        tmp_learnt: &mut Vec<Lit>,
     ) -> lbool {
         let mut th_arg = {
             let confl_cl = &mut self.tmp_c_th;
             confl_cl.clear();
-            TheoryArg{
+            TheoryArg {
                 v: &mut self.v,
                 lits: confl_cl,
                 has_propagated: false,
@@ -647,16 +694,20 @@ impl<Cb:Callbacks> Solver<Cb> {
             TheoryCall::Partial => th.partial_check(&mut th_arg),
             TheoryCall::Final => th.final_check(&mut th_arg),
         }
-        if let TheoryConflict::Clause{costly} = th_arg.conflict {
+        if let TheoryConflict::Clause { costly } = th_arg.conflict {
             // borrow magic
-            let mut local_confl_cl = vec!();
+            let mut local_confl_cl = vec![];
             mem::swap(&mut local_confl_cl, th_arg.lits);
             drop(th_arg);
 
             debug!("theory conflict {:?} (costly: {})", local_confl_cl, costly);
             self.v.sort_clause_lits(&mut local_confl_cl); // as if it were a normal clause
+            local_confl_cl.dedup();
             let learnt = {
-                let r = Conflict::ThLemma {lits: &local_confl_cl, add: costly};
+                let r = Conflict::ThLemma {
+                    lits: &local_confl_cl,
+                    add: costly,
+                };
                 self.v.analyze(r, &self.learnts, tmp_learnt, th)
             };
             self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
@@ -672,11 +723,14 @@ impl<Cb:Callbacks> Solver<Cb> {
             self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
             lbool::FALSE
         } else {
-            debug_assert!(match th_arg.conflict{TheoryConflict::Nil=>true, _ =>false});
+            debug_assert!(match th_arg.conflict {
+                TheoryConflict::Nil => true,
+                _ => false,
+            });
 
             let mut has_propagated = th_arg.has_propagated;
 
-            let mut lemmas = vec!();
+            let mut lemmas = vec![];
             for c in self.v.th_st.iter_lemmas() {
                 trace!("add theory lemma {}", c.pp_dimacs());
                 has_propagated = true;
@@ -697,8 +751,8 @@ impl<Cb:Callbacks> Solver<Cb> {
     }
 
     /// Main solve method (assumptions given in `self.assumptions`).
-    fn solve_internal<Th:Theory>(&mut self, th: &mut Th) -> lbool {
-        assert!(self.v.decision_level()==0);
+    fn solve_internal<Th: Theory>(&mut self, th: &mut Th) -> lbool {
+        assert!(self.v.decision_level() == 0);
         self.model.clear();
         self.conflict.clear();
         if !self.v.ok {
@@ -706,7 +760,7 @@ impl<Cb:Callbacks> Solver<Cb> {
         }
 
         self.v.solves += 1;
-        let mut tmp_learnt : Vec<Lit> = vec![];
+        let mut tmp_learnt: Vec<Lit> = vec![];
 
         self.v.max_learnts = self.num_clauses() as f64 * self.v.learntsize_factor;
         if self.v.max_learnts < self.v.min_learnts_lim as f64 {
@@ -761,7 +815,10 @@ impl<Cb:Callbacks> Solver<Cb> {
 
         self.cancel_until(th, 0);
         debug!("res: {:?}", status);
-        trace!("proved at lvl 0: {:?}", self.v.vars.iter_trail().collect::<Vec<_>>());
+        trace!(
+            "proved at lvl 0: {:?}",
+            self.v.vars.iter_trail().collect::<Vec<_>>()
+        );
         status
     }
 
@@ -791,7 +848,8 @@ impl<Cb:Callbacks> Solver<Cb> {
             let cr = self.learnts[i];
             let cond = {
                 let c = self.v.ca.get_ref(cr);
-                c.size() > 2 && !self.v.locked(c)
+                c.size() > 2
+                    && !self.v.locked(c)
                     && (i < self.learnts.len() / 2 || (c.activity() as f64) < extra_lim)
             };
             if cond {
@@ -804,7 +862,7 @@ impl<Cb:Callbacks> Solver<Cb> {
         }
 
         // self.learnts.resize_default(j);
-        let _deleted = self.learnts.len()-j;
+        let _deleted = self.learnts.len() - j;
         self.learnts.resize(j, CRef::UNDEF);
 
         debug!("reduce_db.done (deleted {})", _deleted);
@@ -825,7 +883,7 @@ impl<Cb:Callbacks> Solver<Cb> {
             if satisfied {
                 self_v.remove_clause(cr);
                 debug!("remove satisfied clause {:?}", self_v.ca.get_ref(cr).lits());
-                // we should not need to tell the proof checker to remove the clause
+            // we should not need to tell the proof checker to remove the clause
             } else {
                 let amount_shaved = {
                     let mut c = self_v.ca.get_mut(cr);
@@ -856,11 +914,15 @@ impl<Cb:Callbacks> Solver<Cb> {
     }
 
     /// Revert to the state at given level (keeping all assignment at `level` but not beyond).
-    fn cancel_until<Th:Theory>(&mut self, th: &mut Th, level: u32) {
+    fn cancel_until<Th: Theory>(&mut self, th: &mut Th, level: u32) {
         let dl = self.v.decision_level();
         if dl > level {
             let n_th_levels = (dl - level) as usize;
-            trace!("solver.cancel-until {} (pop {} theory levels)", level, n_th_levels);
+            trace!(
+                "solver.cancel-until {} (pop {} theory levels)",
+                level,
+                n_th_levels
+            );
             self.v.cancel_until(level);
             th.pop_levels(n_th_levels); // backtrack theory state
         }
@@ -873,10 +935,13 @@ impl<Cb:Callbacks> Solver<Cb> {
         // is not precise but should avoid some unnecessary reallocations for the new region:
         let mut to = ClauseAllocator::with_start_cap(self.v.ca.len() - self.v.ca.wasted());
 
-        self.v.reloc_all(&mut self.learnts, &mut self.clauses, &mut to);
+        self.v
+            .reloc_all(&mut self.learnts, &mut self.clauses, &mut to);
 
-        self.cb.on_gc((self.v.ca.len() * ClauseAllocator::UNIT_SIZE) as usize,
-                      (to.len() * ClauseAllocator::UNIT_SIZE) as usize);
+        self.cb.on_gc(
+            (self.v.ca.len() * ClauseAllocator::UNIT_SIZE) as usize,
+            (to.len() * ClauseAllocator::UNIT_SIZE) as usize,
+        );
         self.v.ca = to;
     }
 
@@ -889,13 +954,20 @@ impl<Cb:Callbacks> Solver<Cb> {
     }
 
     /// Temporary access to the callbacks
-    pub fn cb_mut(&mut self) -> &mut Cb { &mut self.cb }
+    pub fn cb_mut(&mut self) -> &mut Cb {
+        &mut self.cb
+    }
 
     /// Temporary access to the callbacks
-    pub fn cb(&self) -> &Cb { &self.cb }
+    pub fn cb(&self) -> &Cb {
+        &self.cb
+    }
 
-    pub fn dimacs_model(& self) -> SolverPrintDimacs<Cb> {
-        SolverPrintDimacs {s: self, model: true}
+    pub fn dimacs_model(&self) -> SolverPrintDimacs<Cb> {
+        SolverPrintDimacs {
+            s: self,
+            model: true,
+        }
     }
 
     /// Interrupt search asynchronously
@@ -908,10 +980,11 @@ impl<Cb:Callbacks> Solver<Cb> {
     }
 
     fn within_budget(&self) -> bool {
-        ! self.has_been_interrupted()
+        !self.has_been_interrupted()
             && (self.v.conflict_budget < 0 || self.v.conflicts < self.v.conflict_budget as u64)
-            && (self.v.propagation_budget < 0 || self.v.propagations < self.v.propagation_budget as u64)
-            && ! self.cb.stop()
+            && (self.v.propagation_budget < 0
+                || self.v.propagations < self.v.propagation_budget as u64)
+            && !self.cb.stop()
     }
 
     /// Add clause.
@@ -955,9 +1028,7 @@ impl<Cb:Callbacks> Solver<Cb> {
     }
 
     /// Add clause during search
-    fn add_clause_during_search<Th:Theory>(
-        &mut self, th: &mut Th, clause: &mut Vec<Lit>
-    ) -> bool {
+    fn add_clause_during_search<Th: Theory>(&mut self, th: &mut Th, clause: &mut Vec<Lit>) -> bool {
         debug!("add internal clause {:?}", clause);
         if !self.v.ok {
             return false;
@@ -974,12 +1045,14 @@ impl<Cb:Callbacks> Solver<Cb> {
 /// Theory-triggered conflict.
 enum TheoryConflict {
     Nil,
-    Clause {costly: bool},
-    Prop(Lit)
+    Clause { costly: bool },
+    Prop(Lit),
 }
 
-/// The temporary theory argument
-struct TheoryArg<'a> {
+/// The temporary theory argument, passed to the theory.
+///
+/// This is where the theory can perform actions such as adding clauses.
+pub struct TheoryArg<'a> {
     v: &'a mut SolverV,
     lits: &'a mut Vec<Lit>,
     has_propagated: bool,
@@ -989,22 +1062,19 @@ struct TheoryArg<'a> {
 /// Temporary representation of a learnt clause, produced in `analyze`.
 struct LearntClause<'a> {
     orig_lits: &'a [Lit], // original clause
-    add_orig: bool, // should we also add `orig_lits`?
-    clause: &'a [Lit], // the clause
-    backtrack_lvl: i32, // where to backtrack?
+    add_orig: bool,       // should we also add `orig_lits`?
+    clause: &'a [Lit],    // the clause
+    backtrack_lvl: i32,   // where to backtrack?
 }
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Conflict<'a> {
     BCP(CRef), // boolean propagation conflict
-    ThLemma {
-        lits: &'a [Lit],
-        add: bool,
-    },
+    ThLemma { lits: &'a [Lit], add: bool },
     ThProp(Lit), // literal was propagated, but is false
 }
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 enum ResolveWith<'a> {
     Init(Conflict<'a>), // initial conflict
     Resolve(Lit, CRef), // propagation of lit because of clause
@@ -1012,26 +1082,46 @@ enum ResolveWith<'a> {
 
 impl SolverV {
     #[inline(always)]
-    pub fn num_assigns(&self) -> u32 { self.vars.num_assigns() }
+    pub fn num_assigns(&self) -> u32 {
+        self.vars.num_assigns()
+    }
 
     #[inline(always)]
-    fn num_vars(&self) -> u32 { self.next_var.idx() }
-    fn num_clauses(&self) -> u64 { self.num_clauses }
-    fn num_conflicts(&self) -> u64 { self.conflicts }
-    fn num_props(&self) -> u64 { self.propagations }
-    fn num_learnts(&self) -> u64 { self.num_learnts }
+    fn num_vars(&self) -> u32 {
+        self.next_var.idx()
+    }
+    fn num_clauses(&self) -> u64 {
+        self.num_clauses
+    }
+    fn num_conflicts(&self) -> u64 {
+        self.conflicts
+    }
+    fn num_props(&self) -> u64 {
+        self.propagations
+    }
+    fn num_learnts(&self) -> u64 {
+        self.num_learnts
+    }
 
     #[inline(always)]
-    pub fn level(&self, x: Var) -> i32 { self.vars.level(x) }
+    pub fn level(&self, x: Var) -> i32 {
+        self.vars.level(x)
+    }
 
     #[inline(always)]
-    pub fn level_lit(&self, x: Lit) -> i32 { self.level(x.var()) }
+    pub fn level_lit(&self, x: Lit) -> i32 {
+        self.level(x.var())
+    }
 
     #[inline(always)]
-    pub fn value(&self, x: Var) -> lbool { self.vars.value(x) }
+    pub fn value(&self, x: Var) -> lbool {
+        self.vars.value(x)
+    }
 
     #[inline(always)]
-    pub fn value_lit(&self, x: Lit) -> lbool { self.vars.value_lit(x) }
+    pub fn value_lit(&self, x: Lit) -> lbool {
+        self.vars.value_lit(x)
+    }
 
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {
         self.order_heap_data.promote(VarOrder {
@@ -1082,8 +1172,11 @@ impl SolverV {
         let mut next = Var::UNDEF;
 
         // Random decision:
-        if utils::drand(&mut self.random_seed) < self.random_var_freq && !self.order_heap().is_empty() {
-            let idx_tmp = utils::irand(&mut self.random_seed, self.order_heap_data.len() as i32) as usize;
+        if utils::drand(&mut self.random_seed) < self.random_var_freq
+            && !self.order_heap().is_empty()
+        {
+            let idx_tmp =
+                utils::irand(&mut self.random_seed, self.order_heap_data.len() as i32) as usize;
             next = self.order_heap_data[idx_tmp];
             if self.value(next) == lbool::UNDEF && self.decision[next] {
                 self.rnd_decisions += 1;
@@ -1126,10 +1219,12 @@ impl SolverV {
         self.watches().init(Lit::new(v, false));
         self.watches().init(Lit::new(v, true));
         self.vars.ass.insert_default(v, lbool::UNDEF);
-        self.vars.vardata
+        self.vars
+            .vardata
             .insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.rnd_init_act {
-            self.vars.activity
+            self.vars
+                .activity
                 .insert_default(v, utils::drand(&mut self.random_seed) * 0.00001);
         } else {
             self.vars.activity.insert_default(v, 0.0);
@@ -1159,7 +1254,7 @@ impl SolverV {
     /// - `out_learnt[0]` is the asserting literal at level `btlevel`.
     /// - if `out_learnt.size() > 1` then `out_learnt[1]` has the greatest decision level of the
     ///   rest of literals. There may be others from the same level though.
-    fn analyze<'a, Th:Theory>(
+    fn analyze<'a, Th: Theory>(
         &mut self,
         orig: Conflict<'a>,
         learnts: &[CRef],
@@ -1174,33 +1269,41 @@ impl SolverV {
         let conflict_level = match orig {
             Conflict::BCP(_) | Conflict::ThProp(_) => {
                 self.decision_level() as i32 // current level
-            },
-            Conflict::ThLemma {lits,..} => {
+            }
+            Conflict::ThLemma { lits, .. } => {
                 // check it's a proper conflict clause
                 debug_assert!(lits.iter().all(|&p| self.value_lit(p) == lbool::FALSE));
                 debug_assert!(lits.len() >= 1, "theory lemma should have at least 1 lit");
 
-                let lvl = lits.iter().map(|&lit| self.level_lit(lit)).max().unwrap_or(0);
+                let lvl = lits
+                    .iter()
+                    .map(|&lit| self.level_lit(lit))
+                    .max()
+                    .unwrap_or(0);
 
                 if lits.len() == 1 {
                     // unit clause: learn the clause itself at level 0
                     trace!("analyze: learn unit clause {:?} itself", lits);
                     out_learnt.extend_from_slice(lits);
                     return LearntClause {
-                        clause: lits, backtrack_lvl: 0,
-                        orig_lits: lits, add_orig: false,
-                    }
+                        clause: lits,
+                        backtrack_lvl: 0,
+                        orig_lits: lits,
+                        add_orig: false,
+                    };
                 } else if lvl == 0 {
                     // all at level 0: empty clause
                     trace!("analyze: conflict level 0, learn empty clause");
                     return LearntClause {
-                        clause: &[], backtrack_lvl: 0,
-                        orig_lits: lits, add_orig: false,
-                    }
+                        clause: &[],
+                        backtrack_lvl: 0,
+                        orig_lits: lits,
+                        add_orig: false,
+                    };
                 }
 
                 lvl
-            },
+            }
         };
 
         let mut cur_clause = ResolveWith::Init(orig);
@@ -1212,14 +1315,12 @@ impl SolverV {
 
         let mut index = self.vars.trail.len();
 
-        'main: loop {
+        loop {
             // obtain literals to resolve with, as well as a flag indicating
             // whether they should be true or false in the trail
             let mut lits_are_true = false;
             let lits = match cur_clause {
-                ResolveWith::Init(Conflict::ThLemma{lits,..}) => {
-                    lits
-                },
+                ResolveWith::Init(Conflict::ThLemma { lits, .. }) => lits,
                 ResolveWith::Init(Conflict::ThProp(lit)) => {
                     // theory propagation, ask the theory to justify `lit` with Γ.
                     // The initial conflict is `Γ => lit`, which is false in current trail.
@@ -1232,7 +1333,7 @@ impl SolverV {
                         lits.iter().all(|&q| vars.value_lit(q) == lbool::FALSE)
                     });
                     &self.th_st.lemma_lits
-                },
+                }
                 ResolveWith::Init(Conflict::BCP(cr)) => {
                     // bump activity if `cr` is a learnt clause
                     let mut c = self.ca.get_ref(cr);
@@ -1243,18 +1344,21 @@ impl SolverV {
 
                     let lits = c.lits();
                     lits
-                },
+                }
                 ResolveWith::Resolve(lit, cr) if cr == CRef::SPECIAL => {
                     // theory propagation, ask the theory to justify `lit`
                     lits_are_true = true;
                     let lits = th.explain_propagation(lit);
                     debug_assert!(lits.iter().all(|&q| self.value_lit(q) == lbool::TRUE));
                     lits
-                },
+                }
                 ResolveWith::Resolve(_lit, cr) if cr == CRef::UNDEF => {
                     // should have `path_c==0`
-                    panic!("analyze: reached a decision literal {:?}, path_c={}", _lit, path_c);
-                },
+                    panic!(
+                        "analyze: reached a decision literal {:?}, path_c={}",
+                        _lit, path_c
+                    );
+                }
                 ResolveWith::Resolve(lit, cr) => {
                     // bump activity if `cr` is a learnt clause
                     let mut c = self.ca.get_ref(cr);
@@ -1271,17 +1375,23 @@ impl SolverV {
                     // it can't appear in the learnt clause
                     debug_assert_eq!(lit.var(), lits[0].var());
                     &lits[1..]
-                },
+                }
             };
-            trace!("analyze.resolve-with {:?} ((p: {:?}, path_c: {}, from {:?})",
-                lits, p, path_c, cur_clause);
+            trace!(
+                "analyze.resolve-with {:?} ((p: {:?}, path_c: {}, from {:?})",
+                lits,
+                p,
+                path_c,
+                cur_clause
+            );
 
             for &q in lits {
                 let q = if lits_are_true { !q } else { q }; // be sure that `q` is false
                 let lvl = self.vars.level(q.var());
                 assert!(lvl <= conflict_level);
                 if !self.seen[q.var()].is_seen() && lvl > 0 {
-                    self.vars.var_bump_activity(&mut self.order_heap_data, q.var());
+                    self.vars
+                        .var_bump_activity(&mut self.order_heap_data, q.var());
                     self.seen[q.var()] = Seen::SOURCE;
                     if lvl == conflict_level {
                         // at conflict level: need to eliminate this lit by resolution
@@ -1292,12 +1402,18 @@ impl SolverV {
                 } else if self.seen[q.var()] == Seen::REMOVABLE {
                     // the resolution goes back "up" the trail to `q`, which was
                     // resolved again. This is wrong.
-                    panic!("possible cycle in conflict graph between {:?} and {:?}", p, q);
+                    panic!(
+                        "possible cycle in conflict graph between {:?} and {:?}",
+                        p, q
+                    );
                 }
             }
             // Select next literal in the trail to look at:
             while !self.seen[self.vars.trail[index - 1].var()].is_seen() {
-                debug_assert_eq!(self.vars.level(self.vars.trail[index - 1].var()), conflict_level);
+                debug_assert_eq!(
+                    self.vars.level(self.vars.trail[index - 1].var()),
+                    conflict_level
+                );
                 index -= 1;
             }
 
@@ -1313,14 +1429,17 @@ impl SolverV {
         }
 
         // cleanup literals flagged `REMOVABLE`
-        index = self.vars.trail.len()-1;
+        index = self.vars.trail.len() - 1;
         loop {
             let q = self.vars.trail[index];
             if self.seen[q.var()] == Seen::REMOVABLE {
                 self.seen[q.var()] = Seen::UNDEF;
             }
+            if q == p {
+                break;
+            }
+            // avoid overflow by decreasing index only if we keep looping (#7)
             index -= 1;
-            if q == p { break }
         }
 
         // check that the first literal is a decision lit at conflict_level
@@ -1372,20 +1491,29 @@ impl SolverV {
         for &lit in &self.analyze_toclear {
             self.seen[lit.var()] = Seen::UNDEF; // (`seen[]` is now cleared)
         }
-        debug_assert!(out_learnt.iter().all(|&l| self.value_lit(l) == lbool::FALSE));
+        debug_assert!(out_learnt
+            .iter()
+            .all(|&l| self.value_lit(l) == lbool::FALSE));
         let (orig_lits, add_orig) = match orig {
-            Conflict::ThLemma {lits, add} => {
+            Conflict::ThLemma { lits, add } => {
                 // add original lemma only if it's not the same as the clause
                 let not_eq = lits != out_learnt.as_slice();
                 (lits, add && not_eq)
-            },
-            Conflict::ThProp(_) | Conflict::BCP(_) => (&[][..],false),
+            }
+            Conflict::ThProp(_) | Conflict::BCP(_) => (&[][..], false),
         };
         LearntClause {
-            orig_lits, add_orig,
+            orig_lits,
+            add_orig,
             backtrack_lvl: btlevel,
             clause: out_learnt,
         }
+    }
+
+    /// An abstraction of the level of a variable
+    #[inline]
+    fn abstract_level(&self, v: Var) -> u32 {
+        1 << (self.level(v) & 31)
     }
 
     fn minimize_conflict(&mut self, out_learnt: &mut Vec<Lit>) {
@@ -1393,11 +1521,18 @@ impl SolverV {
         self.analyze_toclear.clear();
         self.analyze_toclear.extend_from_slice(&out_learnt);
         let new_size = if self.ccmin_mode == 2 {
+            let mut abstract_levels = 0;
+            for a in out_learnt[1..].iter() {
+                abstract_levels |= self.abstract_level(a.var())
+            }
+
             let mut j = 1;
             for i in 1..out_learnt.len() {
                 let lit = out_learnt[i];
                 // can eliminate `lit` only if it's redundant *and* not a decision
-                if self.reason(lit.var()) == CRef::UNDEF || !self.lit_redundant(lit) {
+                if self.reason(lit.var()) == CRef::UNDEF
+                    || !self.lit_redundant(lit, abstract_levels)
+                {
                     out_learnt[j] = lit;
                     j += 1;
                 }
@@ -1442,7 +1577,7 @@ impl SolverV {
     /// Specialized analysis procedure to express the final conflict in terms of assumptions.
     /// Calculates the (possibly empty) set of assumptions that led to the assignment of `p`, and
     /// stores the result in `out_conflict`.
-    fn analyze_final<Th:Theory>(&mut self, th: &mut Th, p: Lit, out_conflict: &mut LSet) {
+    fn analyze_final<Th: Theory>(&mut self, th: &mut Th, p: Lit, out_conflict: &mut LSet) {
         out_conflict.clear();
         out_conflict.insert(p);
         debug!("analyze_final lit={:?}", p);
@@ -1454,7 +1589,10 @@ impl SolverV {
         self.seen[p.var()] = Seen::SOURCE;
 
         // FIXME: use a stack here too, to be more robust wrt. theory propagations
-        for &lit in self.vars.trail[self.vars.trail_lim[0] as usize..].iter().rev() {
+        for &lit in self.vars.trail[self.vars.trail_lim[0] as usize..]
+            .iter()
+            .rev()
+        {
             let x = lit.var();
             if self.seen[x].is_seen() {
                 let reason = self.reason(x);
@@ -1482,90 +1620,73 @@ impl SolverV {
         }
 
         self.seen[p.var()] = Seen::UNDEF;
-        debug_assert!(self.seen.iter().all(|(_,&s)| s==Seen::UNDEF));
+        debug_assert!(self.seen.iter().all(|(_, &s)| s == Seen::UNDEF));
     }
 
     /// Check if `p` can be removed from a conflict clause `C`.
     ///
     /// It can be removed from `C` if it is propagation-implied
     /// by literals of level 0 exclusively or if `C x p.reason` subsumes `C`.
-    // TODO: port abstract levels from minisat, to make this faster.
-    fn lit_redundant(&mut self, mut p: Lit) -> bool {
-        debug_assert!(self.seen[p.var()] == Seen::UNDEF || self.seen[p.var()] == Seen::SOURCE);
-        debug_assert!(self.reason(p.var()) != CRef::UNDEF);
+    fn lit_redundant(&mut self, p: Lit, abstract_levels: u32) -> bool {
+        self.minimize_stack.clear();
+        self.minimize_stack.push(p);
 
-        let mut cr = self.reason(p.var());
-        let stack = &mut self.minimize_stack;
-        stack.clear();
+        let top = self.analyze_toclear.len();
 
-        let mut i: u32 = 1;
-        loop {
-            // theory propagation
+        while self.minimize_stack.len() > 0 {
+            let q = *self.minimize_stack.last().unwrap();
+            let cr = self.reason(q.var());
+            debug_assert_ne!(cr, CRef::UNDEF);
+            self.minimize_stack.pop();
+
+            // special case: theory propagation
             if cr == CRef::SPECIAL {
-                if self.vars.level(p.var()) == 0 {
+                if self.vars.level(q.var()) == 0 {
                     continue; // level 0, just continue
                 } else {
                     // we just bail out here, even though the theory propagation
                     // could be caused by propagations that ultimately
                     // come from level 0
                     // TODO: actually perform resolution here
+
+                    for a in self.analyze_toclear[top..].iter() {
+                        self.seen[a.var()] = Seen::UNDEF;
+                    }
+                    self.analyze_toclear.resize(top, Lit::UNDEF);
                     return false;
                 }
             }
 
             let c = self.ca.get_ref(cr);
-            if i < c.size() {
-                // Checking `p`-parents `l`:
-                let l: Lit = c[i];
-
-                // Variable at level 0 or previously removable:
-                if self.vars.level(l.var()) == 0 || self.seen[l.var()] == Seen::SOURCE
-                    || self.seen[l.var()] == Seen::REMOVABLE
-                {
-                    i += 1;
+            // `q` comes from some propagation with `c`, check if these lits can
+            // also be eliminated or are already in the learnt clause
+            for &l in c.lits()[1..].iter() {
+                // Variable at level 0 or previously removable: just skip
+                if self.vars.level(l.var()) == 0 || self.seen[l.var()] == Seen::SOURCE {
                     continue;
                 }
 
-                // Check if variable can not be removed for some local reason
-                // (e.g. if it's a decision or has failed to be removed already)
-                if self.vars.reason(l.var()) == CRef::UNDEF || self.seen[l.var()] == Seen::FAILED {
-                    stack.push(ShrinkStackElem::new(0, p));
-                    for elem in stack.iter() {
-                        // elements in the stack can't justify making a literal
-                        // redundant, so remember that
-                        if self.seen[elem.l.var()] == Seen::UNDEF {
-                            self.seen[elem.l.var()] = Seen::FAILED;
-                            self.analyze_toclear.push(elem.l);
-                        }
+                if self.reason(l.var()) != CRef::UNDEF
+                    && (self.abstract_level(l.var()) & abstract_levels) != 0
+                {
+                    // keep this literal.
+                    // NOTE: if the level of `l` isn't in `abstract_levels`, it
+                    // means it comes from propagations at a decision level
+                    // unrelated to the learnt clause, and therefore is
+                    // somehow implied by an unrelated decision, so there's no
+                    // chance to eliminate `l` via resolutions from the learnt clause.
+                    self.seen[l.var()] = Seen::SOURCE;
+                    self.minimize_stack.push(l);
+                    self.analyze_toclear.push(l);
+                } else {
+                    // cannot remove `l`, cancel
+                    for a in self.analyze_toclear[top..].iter() {
+                        self.seen[a.var()] = Seen::UNDEF;
                     }
-
+                    self.analyze_toclear.resize(top, Lit::UNDEF);
                     return false;
                 }
-
-                // Recursively check if `l` is redundant itself
-                stack.push(ShrinkStackElem::new(i, p));
-                i = 0;
-                p = l;
-                cr = self.vars.reason(p.var());
-            } else {
-                // Finished with current element `p` and reason `c`:
-                if self.seen[p.var()] == Seen::UNDEF {
-                    self.seen[p.var()] = Seen::REMOVABLE;
-                    self.analyze_toclear.push(p);
-                }
-
-                // Terminate with success if stack is empty:
-                if stack.len() == 0 {
-                    break;
-                }
-
-                // Continue with top element on stack:
-                let last = stack.pop().expect("stack is empty");
-                i = last.i;
-                p = last.l;
-                cr = self.vars.reason(p.var());
             }
-            i += 1;
         }
 
         true
@@ -1591,8 +1712,8 @@ impl SolverV {
             self.qhead += 1;
             let watches_data_ptr: *mut OccListsData<_, _> = &mut self.watches_data;
             // let ws = self.watches().lookup_mut(p);
-            let ws =
-                self.watches_data
+            let ws = self
+                .watches_data
                 .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca });
             // eprintln!("watcher of {:?} = {:?}", p, ws);
             let mut i: usize = 0;
@@ -1689,19 +1810,29 @@ impl SolverV {
             let has_val2 = self.value_lit(lit2) != lbool::UNDEF;
 
             // unassigned variables come first
-            if has_val1 && !has_val2 { return cmp::Ordering::Greater }
-            if !has_val1 && has_val2 { return cmp::Ordering::Less }
+            if has_val1 && !has_val2 {
+                return cmp::Ordering::Greater;
+            }
+            if !has_val1 && has_val2 {
+                return cmp::Ordering::Less;
+            }
 
             let lvl1 = self.level_lit(lit1);
             let lvl2 = self.level_lit(lit2);
-            lvl2.cmp(&lvl1) // higher level come first
+            if lvl1 != lvl2 {
+                lvl2.cmp(&lvl1) // higher level come first
+            } else {
+                lit1.cmp(&lit2) // otherwise default comparison
+            }
         });
 
         // check that the first literal is a proper watch
-        debug_assert!(self.value_lit(clause[0]) == lbool::UNDEF || {
-            let lvl0 = self.level_lit(clause[0]);
-                      clause[1..].iter().all(|&lit2| self.level_lit(lit2) <= lvl0)
-        });
+        debug_assert!(
+            self.value_lit(clause[0]) == lbool::UNDEF || {
+                let lvl0 = self.level_lit(clause[0]);
+                clause[1..].iter().all(|&lit2| self.level_lit(lit2) <= lvl0)
+            }
+        );
     }
 
     /// Move to the given clause allocator, where clause indices might differ
@@ -1709,8 +1840,8 @@ impl SolverV {
         &mut self,
         learnts: &mut Vec<CRef>,
         clauses: &mut Vec<CRef>,
-        to: &mut ClauseAllocator)
-    {
+        to: &mut ClauseAllocator,
+    ) {
         macro_rules! is_removed {
             ($ca:expr, $cr:expr) => {
                 $ca.get_ref($cr).mark() == 1
@@ -1873,21 +2004,24 @@ impl SolverV {
     }
 
     #[inline(always)]
-    pub fn decision_level(&self) -> u32 { self.vars.decision_level() }
+    pub fn decision_level(&self) -> u32 {
+        self.vars.decision_level()
+    }
 
     #[inline(always)]
-    fn reason(&self, x: Var) -> CRef { self.vars.reason(x) }
+    fn reason(&self, x: Var) -> CRef {
+        self.vars.reason(x)
+    }
 
     /// Returns `true` if a clause is a reason for some implication in the current state.
     fn locked(&self, c: ClauseRef) -> bool {
         let reason = self.reason(c[0].var());
-        self.value_lit(c[0]) == lbool::TRUE &&
-            reason != CRef::UNDEF &&
-            reason != CRef::SPECIAL &&
-            self.ca.get_ref(reason) == c
+        self.value_lit(c[0]) == lbool::TRUE
+            && reason != CRef::UNDEF
+            && reason != CRef::SPECIAL
+            && self.ca.get_ref(reason) == c
     }
     // inline bool     Solver::locked          (const Clause& c) const { return value(c[0]) == l_True && reason(var(c[0])) != CRef_Undef && ca.lea(reason(var(c[0]))) == &c; }
-
 
     fn progress_estimate(&self) -> f64 {
         let mut progress = 0.0;
@@ -2015,13 +2149,17 @@ impl VarState {
 
     fn proved_at_lvl_0(&self) -> &[Lit] {
         // find where the end of the level-0 part of the trail is
-        let end =
-            self.trail_lim.get(0).map_or(self.trail.len(), |&x| x as usize);
+        let end = self
+            .trail_lim
+            .get(0)
+            .map_or(self.trail.len(), |&x| x as usize);
         &self.trail[..end]
     }
 
     #[inline(always)]
-    pub fn value(&self, x: Var) -> lbool { self.ass[x] }
+    pub fn value(&self, x: Var) -> lbool {
+        self.ass[x]
+    }
 
     #[inline(always)]
     fn value_lit(&self, x: Lit) -> lbool {
@@ -2048,7 +2186,12 @@ impl VarState {
     }
 
     fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
-        debug_assert_eq!(self.value_lit(p), lbool::UNDEF, "lit {:?} should be undef", p);
+        debug_assert_eq!(
+            self.value_lit(p),
+            lbool::UNDEF,
+            "lit {:?} should be undef",
+            p
+        );
         self.ass[p.var()] = lbool::new(p.sign());
         self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
         self.trail.push(p);
@@ -2075,49 +2218,68 @@ impl VarState {
     }
 
     #[allow(dead_code)]
-    fn iter_trail<'a>(&'a self) -> impl Iterator<Item=Lit>+'a {
+    fn iter_trail<'a>(&'a self) -> impl Iterator<Item = Lit> + 'a {
         self.trail.iter().map(|l| *l)
     }
 }
 
 impl<'a> TheoryArg<'a> {
     #[inline]
-    fn is_ok(&self) -> bool {
+    pub fn is_ok(&self) -> bool {
         match self.conflict {
             TheoryConflict::Nil => true,
-            TheoryConflict::Prop(_) | TheoryConflict::Clause{..} => false,
+            TheoryConflict::Prop(_) | TheoryConflict::Clause { .. } => false,
         }
     }
-}
 
-// `Solver` is a valid theory argument
-impl<'a> TheoryArgument for TheoryArg<'a> {
+    /// Value of given var in current model.
     #[inline(always)]
-    fn value_lit(&self, lit: Lit) -> lbool { self.v.vars.value_lit(lit) }
+    pub fn value(&self, v: Var) -> lbool {
+        self.v.vars.value(v)
+    }
 
+    /// Current (possibly partial) model.
     #[inline(always)]
-    fn value(&self, v: Var) -> lbool { self.v.vars.value(v) }
+    pub fn model(&self) -> &[Lit] {
+        &self.v.vars.trail
+    }
 
-    #[inline(always)]
-    fn model(&self) -> &[Lit] { &self.v.vars.trail }
-
-    // make a new (decision) literal
-    fn mk_new_lit(&mut self) -> Lit {
+    /// Allocate a new literal.
+    pub fn mk_new_lit(&mut self) -> Lit {
         let v = self.v.new_var(lbool::FALSE, true);
         Lit::new(v, true)
     }
 
-    fn add_theory_lemma(&mut self, c: &[Lit]) {
+    /// Push a theory lemma into the solver.
+    ///
+    /// This is useful for lemma-on-demand or theory splitting, but can
+    /// be relatively costly.
+    ///
+    /// NOTE: This is not fully supported yet.
+    pub fn add_theory_lemma(&mut self, c: &[Lit]) {
         if self.is_ok() {
             self.v.th_st.push_lemma(c)
         }
     }
 
-    fn propagate(&mut self, p: Lit) -> bool {
-        if ! self.is_ok() { return false }
+    /// Propagate the literal `p`, which is theory-implied by the current trail.
+    ///
+    /// This will add `p` on the trail. The theory must be ready to
+    /// provide an explanation via `Theory::explain_prop(p)` if asked to
+    /// during conflict resolution.
+    ///
+    /// Returns `true` if propagation succeeded (or did nothing), `false`
+    /// if the propagation results in an immediate conflict.
+    /// If this returns `false`, the theory should avoid doing more work and
+    /// return as early as reasonably possible.
+    pub fn propagate(&mut self, p: Lit) -> bool {
+        if !self.is_ok() {
+            return false;
+        }
         let v_p = self.v.vars.value_lit(p);
-        if v_p == lbool::TRUE { true }
-        else if v_p == lbool::UNDEF {
+        if v_p == lbool::TRUE {
+            true
+        } else if v_p == lbool::UNDEF {
             // propagate on the fly
             self.has_propagated = true;
             let cr = CRef::SPECIAL; // indicates a theory propagation
@@ -2131,10 +2293,25 @@ impl<'a> TheoryArgument for TheoryArg<'a> {
         }
     }
 
-    fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
-        if lits.len() == 0 { panic!("conflicts must have a least one literal") }
+    /// Add a conflict clause.
+    ///
+    /// This should be used in the theory when the current partial model
+    /// is unsatisfiable. It will force the SAT solver to backtrack.
+    /// All propagations added with `propagate` during this session
+    /// will be discarded.
+    ///
+    /// ## Params
+    /// - `lits` a clause that is a tautology of the theory (ie a lemma)
+    ///     and that is false in the current (partial) model.
+    /// - `costly` if true, indicates that the conflict `c` was costly to produce.
+    ///     This is a hint for the SAT solver to keep the theory lemma that corresponds
+    ///     to `c` along with the actual learnt clause.
+    pub fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
+        if lits.len() == 0 {
+            panic!("conflicts must have a least one literal")
+        }
         if self.is_ok() {
-            self.conflict = TheoryConflict::Clause{costly};
+            self.conflict = TheoryConflict::Clause { costly };
             self.lits.clear();
             self.lits.extend_from_slice(lits);
         }
@@ -2168,20 +2345,12 @@ struct WatcherDeleted<'a> {
     ca: &'a ClauseAllocator,
 }
 
-#[derive(Debug, Clone, Copy)]
-/// Elements of the stack used for conflict clause minimization
-struct ShrinkStackElem {
-    i: u32,
-    l: Lit,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 enum Seen {
     UNDEF,
     SOURCE,
     REMOVABLE,
-    FAILED,
 }
 
 mod utils {
@@ -2258,18 +2427,14 @@ impl<'a> Comparator<Var> for VarOrder<'a> {
 }
 
 impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
+    #[inline]
     fn deleted(&self, w: &Watcher) -> bool {
         self.ca.get_ref(w.cref).mark() == 1
     }
 }
 
-impl ShrinkStackElem {
-    fn new(i: u32, l: Lit) -> Self {
-        Self { i, l }
-    }
-}
-
 impl Default for Seen {
+    #[inline]
     fn default() -> Self {
         Seen::UNDEF
     }
@@ -2282,9 +2447,8 @@ impl Seen {
     }
 }
 
-
 impl Watcher {
-    const DUMMY : Watcher = Watcher {
+    const DUMMY: Watcher = Watcher {
         cref: CRef::UNDEF,
         blocker: Lit::UNDEF,
     };
@@ -2335,7 +2499,8 @@ impl SolverOpts {
             && (0.0 <= self.random_var_freq && self.random_var_freq <= 1.0)
             && (0.0 < self.random_seed && self.random_seed < f64::INFINITY)
             && (0 <= self.ccmin_mode && self.ccmin_mode <= 2)
-            && (0 <= self.phase_saving && self.phase_saving <= 2) && 1 <= self.restart_first
+            && (0 <= self.phase_saving && self.phase_saving <= 2)
+            && 1 <= self.restart_first
             && (1.0 < self.restart_inc && self.restart_inc < f64::INFINITY)
             && (0.0 < self.garbage_frac && self.garbage_frac < f64::INFINITY)
             && 0 <= self.min_learnts_lim

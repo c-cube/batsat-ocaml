@@ -3,7 +3,7 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g. crates.io) dependencies
+# to registry (e.g., crates.io) dependencies
 #
 # If you believe there's an error in this file please file an
 # issue against the rust-lang/cargo repository. If you're
@@ -11,8 +11,9 @@
 # will likely look very different (and much more reasonable)
 
 [package]
+edition = "2018"
 name = "ocaml"
-version = "0.5.0"
+version = "0.12.1"
 authors = ["Zach Shipko <zachshipko@gmail.com>"]
 description = "OCaml bindings for Rust"
 documentation = "https://docs.rs/ocaml"
@@ -20,5 +21,22 @@ readme = "README.md"
 keywords = ["ocaml", "rust", "ffi"]
 license = "ISC"
 repository = "https://github.com/zshipko/ocaml-rs"
+[package.metadata.docs.rs]
+features = ["docs-rs", "derive", "link"]
+[dependencies.cstr_core]
+version = "0.2"
+optional = true
 
-[dependencies]
+[dependencies.ocaml-derive]
+version = "0.12"
+optional = true
+
+[dependencies.ocaml-sys]
+version = "0.12"
+
+[features]
+default = ["derive"]
+derive = ["ocaml-derive"]
+docs-rs = ["ocaml-sys/docs-rs"]
+link = ["ocaml-sys/link"]
+no-std = ["cstr_core/alloc"]

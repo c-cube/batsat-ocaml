@@ -57,8 +57,6 @@ let proved = S.proved_lvl_0 s ;;
 Array.iter (fun l -> Printf.printf "proved at lvl 0: %d\n" (S.Lit.to_int l)) proved;;
 assert (Array.to_list proved |> List.exists (fun l -> l = S.Lit.neg l3));;
 
-S.delete s;;
-S.delete s;;
 print_endline "gc.compact...!";;
 let s = ();; (* shadow *)
 Gc.compact();;

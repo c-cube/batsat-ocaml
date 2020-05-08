@@ -20,12 +20,11 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 
 use {
-    std::{fmt, iter::DoubleEndedIterator, ops,u32,slice},
-    smallvec::SmallVec,
     crate::{
-        intmap::{AsIndex, IntMap, IntSet, IntMapBool},
         alloc::{self, RegionAllocator},
+        intmap::{AsIndex, IntMap, IntMapBool, IntSet},
     },
+    std::{fmt, iter::DoubleEndedIterator, ops, slice, u32},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -37,7 +36,7 @@ impl fmt::Debug for Var {
         if self.0 == !0 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "{}", self.0+1)
+            write!(f, "{}", self.0 + 1)
         }
     }
 }
@@ -52,6 +51,13 @@ impl Var {
     #[inline(always)]
     pub fn idx(&self) -> u32 {
         self.0
+    }
+
+    /// Make a variable from the index. This should only be used
+    /// with integers obtained from an existing `v.idx()`
+    #[inline]
+    pub fn unsafe_from_idx(idx: u32) -> Self {
+        Var::from_idx(idx)
     }
 }
 
@@ -77,10 +83,6 @@ impl Lit {
     #[inline(always)]
     pub fn new(var: Var, sign: bool) -> Self {
         Lit(var.0 * 2 + (!sign) as u32)
-    }
-    #[inline(always)]
-    pub(crate) fn from_idx(idx: u32) -> Self {
-        Lit(idx)
     }
     #[inline(always)]
     pub fn idx(&self) -> u32 {
@@ -110,9 +112,12 @@ impl Lit {
     /// ```
     #[inline(always)]
     pub fn apply_sign(&self, sign: bool) -> Lit {
-        if sign { *self } else { ! *self }
+        if sign {
+            *self
+        } else {
+            !*self
+        }
     }
-
 }
 
 impl fmt::Debug for Lit {
@@ -122,7 +127,7 @@ impl fmt::Debug for Lit {
         } else if self.0 == !1 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "{}{:?}", if self.sign() {""} else {"-"}, self.var())
+            write!(f, "{}{:?}", if self.sign() { "" } else { "-" }, self.var())
         }
     }
 }
@@ -279,8 +284,18 @@ impl ops::BitOrAssign for lbool {
     }
 }
 
+impl From<bool> for lbool {
+    fn from(x: bool) -> Self {
+        if x {
+            lbool::TRUE
+        } else {
+            lbool::FALSE
+        }
+    }
+}
+
 /// The source of a clause
-#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Axiom,
     Learnt,
@@ -336,12 +351,12 @@ impl<'a> ClauseRef<'a> {
         unsafe { self.extra.expect("no extra field").f32 }
     }
     #[inline(always)]
-    pub fn lits(& self) -> &'a [Lit] {
+    pub fn lits(&self) -> &'a [Lit] {
         let ptr = self.data.as_ptr() as *const ClauseData as *const Lit;
         unsafe { slice::from_raw_parts(ptr, self.data.len()) }
     }
     #[inline(always)]
-    pub fn iter(& self) -> impl DoubleEndedIterator<Item=&'a Lit> {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &'a Lit> {
         self.lits().iter()
     }
 }
@@ -351,8 +366,8 @@ impl<'a> ClauseRef<'a> {
 /// We use `Into` to have more flexibility for `ClauseRef`, which contains
 /// a slice of a `union` type rather than pure literals
 pub trait ClauseIterable: fmt::Debug {
-    type Item : Copy + Into<Lit>;
-    fn items(& self) -> &[Self::Item];
+    type Item: Copy + Into<Lit>;
+    fn items(&self) -> &[Self::Item];
 }
 
 /// Any iterable clause can be printed in DIMACS
@@ -361,7 +376,12 @@ impl<T: ClauseIterable> display::Print for T {
     fn fmt_dimacs(&self, out: &mut fmt::Formatter) -> fmt::Result {
         for &x in self.items().iter() {
             let lit: Lit = x.into();
-            write!(out, "{}{} ", (if lit.sign() {""} else {"-"}), lit.var().idx()+1)?;
+            write!(
+                out,
+                "{}{} ",
+                (if lit.sign() { "" } else { "-" }),
+                lit.var().idx() + 1
+            )?;
         }
         write!(out, "0")?;
         Ok(())
@@ -370,31 +390,37 @@ impl<T: ClauseIterable> display::Print for T {
 
 impl<'a> ClauseIterable for ClauseRef<'a> {
     type Item = Lit;
-    fn items(& self) -> &[Self::Item] {
+    fn items(&self) -> &[Self::Item] {
         unsafe { slice::from_raw_parts(self.data.as_ptr() as *const Lit, self.data.len()) }
     }
 }
 
 impl<'a> ClauseIterable for ClauseMut<'a> {
     type Item = Lit;
-    fn items(& self) -> &[Self::Item] {
+    fn items(&self) -> &[Self::Item] {
         unsafe { slice::from_raw_parts(self.data.as_ptr() as *const Lit, self.data.len()) }
     }
 }
 
 impl<'a> ClauseIterable for &'a [Lit] {
     type Item = Lit;
-    fn items(&self) -> & [Self::Item] { &self }
+    fn items(&self) -> &[Self::Item] {
+        &self
+    }
 }
 
 impl ClauseIterable for Vec<Lit> {
     type Item = Lit;
-    fn items(self: &Vec<Lit>) -> &[Self::Item] { &self }
+    fn items(self: &Vec<Lit>) -> &[Self::Item] {
+        &self
+    }
 }
 
 impl ClauseIterable for IntSet<Lit> {
     type Item = Lit;
-    fn items(&self) -> &[Self::Item] { self.as_slice() }
+    fn items(&self) -> &[Self::Item] {
+        self.as_slice()
+    }
 }
 
 impl<'a> ClauseMut<'a> {
@@ -437,11 +463,6 @@ impl<'a> ClauseMut<'a> {
         debug_assert!(!self.reloced());
         self.set_reloced(true);
         self.data[0].cref = c;
-    }
-    #[inline(always)]
-    pub fn lits(& self) -> &'a [Lit] {
-        let ptr = self.data.as_ptr() as *const ClauseData as *const Lit;
-        unsafe { slice::from_raw_parts(ptr, self.data.len()) }
     }
     pub fn shrink(self, new_size: u32) {
         debug_assert!(2 <= new_size);
@@ -503,7 +524,9 @@ pub(crate) union ClauseData {
 }
 
 impl Into<Lit> for ClauseData {
-    fn into(self: ClauseData) -> Lit { unsafe { self.lit } }
+    fn into(self: ClauseData) -> Lit {
+        unsafe { self.lit }
+    }
 }
 
 impl Default for ClauseData {
@@ -545,8 +568,11 @@ impl ClauseHeader {
         debug_assert!(mark < 4);
         debug_assert!(size < (1 << 27));
         ClauseHeader(
-            (mark << 30) | ((learnt as u32) << 29) | ((has_extra as u32) << 28)
-                | ((reloced as u32) << 27) | size,
+            (mark << 30)
+                | ((learnt as u32) << 29)
+                | ((has_extra as u32) << 28)
+                | ((reloced as u32) << 27)
+                | size,
         )
     }
     #[inline(always)]
@@ -716,7 +742,7 @@ pub trait DeletePred<V> {
     fn deleted(&self, v: &V) -> bool;
 }
 
-pub type OccVec<V> = SmallVec<[V;4]>;
+pub type OccVec<V> = Vec<V>;
 
 #[derive(Debug, Clone)]
 /// List of occurrences of objects of type `K` (e.g. literals) in values
@@ -745,7 +771,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
 
     /// Obtain a fully usable occurrence list using the given predicate
     pub fn promote<P: DeletePred<V>>(&mut self, pred: P) -> OccLists<K, V, P> {
-        OccLists { data: self, pred: pred, }
+        OccLists { data: self, pred }
     }
 
     /// `oclist.lookup_mut_pred(idx, p)` returns an up-to-date list of occurrences
@@ -850,7 +876,7 @@ pub mod display {
     use std::fmt;
 
     /// Objects that can be printed in DIMACS syntax
-    pub trait Print : Sized {
+    pub trait Print: Sized {
         fn fmt_dimacs(&self, out: &mut fmt::Formatter) -> fmt::Result;
 
         /// Any type implementing `T` can  be used in a format string by
@@ -861,14 +887,16 @@ pub mod display {
         /// let v: Vec<Lit> = vec![];
         /// format!("as dimacs: {}", v.pp_dimacs());
         /// ```
-        fn pp_dimacs(&self) -> PrintWrapper<Self> { PrintWrapper(&self) }
+        fn pp_dimacs(&self) -> PrintWrapper<Self> {
+            PrintWrapper(&self)
+        }
     }
 
     /// A wrapper that can be used to display objects in format strings
-    pub struct PrintWrapper<'a, T:'a+Print>(&'a T);
+    pub struct PrintWrapper<'a, T: 'a + Print>(&'a T);
 
     // Whenever `T` is printable in DIMACS, its wrapper implements Display
-    impl<'a,T:Print> fmt::Display for PrintWrapper<'a,T> {
+    impl<'a, T: Print> fmt::Display for PrintWrapper<'a, T> {
         fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
             self.0.fmt_dimacs(out)
         }
@@ -893,21 +921,26 @@ mod test {
             let a = lbool::from_u8(i);
             for j in 0..4 {
                 let b = lbool::from_u8(j);
-                let are_eq =
-                    (i==0 && j==0) ||
-                    (i==1 && j==1) ||
-                    (i >= 2 && j >= 2);
-                assert_eq!(are_eq, a==b, "{:?}[{}] == {:?}[{}] should be {}",
-                           a, i, b, j, are_eq);
+                let are_eq = (i == 0 && j == 0) || (i == 1 && j == 1) || (i >= 2 && j >= 2);
+                assert_eq!(
+                    are_eq,
+                    a == b,
+                    "{:?}[{}] == {:?}[{}] should be {}",
+                    a,
+                    i,
+                    b,
+                    j,
+                    are_eq
+                );
             }
         }
     }
 
     #[test]
     fn test_not() {
-        assert_eq!(- lbool::TRUE, lbool::FALSE);
-        assert_eq!(- lbool::FALSE, lbool::TRUE);
-        assert_eq!(- lbool::UNDEF, lbool::UNDEF);
+        assert_eq!(-lbool::TRUE, lbool::FALSE);
+        assert_eq!(-lbool::FALSE, lbool::TRUE);
+        assert_eq!(-lbool::UNDEF, lbool::UNDEF);
     }
 
     #[test]
@@ -950,4 +983,3 @@ mod test {
         assert_eq!(CRef::UNDEF, CRef::SPECIAL + 1);
     }
 }
-

@@ -1,125 +1,56 @@
-use core;
-use value::Value;
+use crate::sys;
 
-use std::ffi::CString;
-
-/// Hash variant name
-pub fn hash_variant<S: AsRef<str>>(name: S) -> Value {
-    unsafe {
-        Value::new(core::mlvalues::caml_hash_variant(name.as_ref().as_ptr()))
-    }
-}
+#[cfg(feature = "link")]
+static RUNTIME: std::sync::Once = std::sync::Once::new();
 
 /// Release global lock
-pub fn release_runtime_system() {
-    unsafe {
-        core::memory::caml_enter_blocking_section()
-    }
+pub fn release_lock() {
+    unsafe { sys::caml_enter_blocking_section() }
 }
 
 /// Obtain global lock
-pub fn acquire_runtime_system() {
-    unsafe {
-        core::memory::caml_leave_blocking_section()
-    }
+pub fn acquire_lock() {
+    unsafe { sys::caml_leave_blocking_section() }
 }
 
-pub fn failwith<S: AsRef<str>>(arg: S) {
-    let s = CString::new(arg.as_ref()).unwrap();
-    unsafe {
-        core::fail::caml_failwith(s.as_ptr())
-    }
+/// Execute a function with the OCaml global lock
+pub fn locked<T, F: FnOnce() -> T>(f: F) -> T {
+    acquire_lock();
+    let x = f();
+    release_lock();
+    x
 }
 
-pub fn failwith_value(msg: Value) {
-    unsafe {
-        core::fail::caml_failwith_value(msg.value())
-    }
+/// Execute a function without the OCaml global lock
+pub fn unlocked<T, F: FnOnce() -> T>(f: F) -> T {
+    release_lock();
+    let x = f();
+    acquire_lock();
+    x
 }
 
-pub fn invalid_argument<S: AsRef<str>>(arg: S) {
-    let s = CString::new(arg.as_ref()).unwrap();
-    unsafe {
-        core::fail::caml_invalid_argument(s.as_ptr())
-    }
+/// Initialize the OCaml runtime, this will all command-line arguments to be available using
+/// `Sys.argv`.
+///
+/// This is equivalent to calling `caml_main`
+#[cfg(feature = "link")]
+pub fn init() {
+    RUNTIME.call_once(|| {
+        let args = std::env::args()
+            .map(|arg| std::ffi::CString::new(arg).unwrap())
+            .collect::<Vec<std::ffi::CString>>();
+
+        // convert the strings to raw pointers
+        let mut c_args = args
+            .iter()
+            .map(|arg| arg.as_ptr() as *const std::os::raw::c_char)
+            .collect::<Vec<*const std::os::raw::c_char>>();
+        c_args.push(std::ptr::null());
+        unsafe { crate::sys::caml_main(c_args.as_ptr()) }
+    })
 }
 
-pub fn invalid_argument_value(msg: Value) {
-    unsafe {
-        core::fail::caml_invalid_argument_value(msg.value())
-    }
-}
-
-pub fn raise(bucket: Value){
-    unsafe {
-        core::fail::caml_raise(bucket.value())
-    }
-}
-
-pub fn raise_constant(tag: Value) {
-    unsafe {
-        core::fail::caml_raise_constant(tag.value())
-    }
-}
-
-pub fn raise_with_arg(tag: Value, arg: Value) {
-    unsafe {
-        core::fail::caml_raise_with_arg(tag.value(), arg.value())
-    }
-}
-
-pub fn raise_with_string<S: AsRef<str>>(tag: Value, msg: S) {
-    let s = CString::new(msg.as_ref()).unwrap();
-    unsafe {
-        core::fail::caml_raise_with_string(tag.value(), s.as_ptr())
-    }
-}
-
-
-pub fn raise_out_of_memory(){
-    unsafe {
-        core::fail::caml_raise_out_of_memory()
-    }
-}
-
-pub fn raise_stack_overflow(){
-    unsafe {
-        core::fail::caml_raise_stack_overflow()
-    }
-}
-
-pub fn raise_sys_error(arg1: Value){
-    unsafe {
-        core::fail::caml_raise_sys_error(arg1.value())
-    }
-}
-
-pub fn raise_end_of_file(){
-    unsafe {
-        core::fail::caml_raise_end_of_file()
-    }
-}
-
-pub fn raise_zero_divide(){
-    unsafe {
-        core::fail::caml_raise_zero_divide()
-    }
-}
-
-pub fn raise_not_found(){
-    unsafe {
-        core::fail::caml_raise_not_found()
-    }
-}
-
-pub fn array_bound_error(){
-    unsafe {
-        core::fail::caml_array_bound_error()
-    }
-}
-
-pub fn raise_sys_blocked_io(){
-    unsafe {
-        core::fail::caml_raise_sys_blocked_io()
-    }
+/// Shutdown and cleanup OCaml runtime
+pub fn shutdown() {
+    unsafe { crate::sys::caml_shutdown() }
 }

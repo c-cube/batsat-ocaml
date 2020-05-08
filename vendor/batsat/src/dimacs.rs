@@ -20,8 +20,11 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 
 use {
+    crate::{
+        interface::SolverInterface,
+        {lbool, Lit},
+    },
     std::io::{self, BufRead},
-    crate::{interface::SolverInterface, {Lit, Var, lbool}},
 };
 
 /// `parse(input, solver)` adds the content of `input` to the solver
@@ -64,13 +67,20 @@ pub fn parse<S: SolverInterface, R: BufRead>(
         } else if incremental && ch == Some(b'a') {
             input.consume(1); // skip 'a'
             read_clause(input, solver, &mut lits)?;
-            debug!("solve with assumptions {:?} (ok: {})", &lits, solver.is_ok());
+            debug!(
+                "solve with assumptions {:?} (ok: {})",
+                &lits,
+                solver.is_ok()
+            );
             solver.simplify();
             let res = solver.solve_limited(&lits); // solve under assumptions
             match res {
                 x if x == lbool::TRUE => println!("SAT"),
                 x if x == lbool::FALSE => println!("UNSAT"),
-                x => { assert_eq!(x,lbool::UNDEF); println!("UNKNOWN") }
+                x => {
+                    assert_eq!(x, lbool::UNDEF);
+                    println!("UNKNOWN")
+                }
             }
         } else if let Some(_) = ch {
             read_clause(input, solver, &mut lits)?;
@@ -100,10 +110,8 @@ fn read_clause<S: SolverInterface, R: BufRead>(
             return Ok(());
         }
         let var = (parsed_lit.abs() - 1) as u32;
-        while var >= solver.num_vars() {
-            solver.new_var_default();
-        }
-        lits.push(Lit::new(Var::from_idx(var), parsed_lit > 0));
+        let lit = Lit::new(solver.var_of_int(var), parsed_lit > 0);
+        lits.push(lit);
     }
 }
 
@@ -139,7 +147,7 @@ fn parse_int<R: BufRead>(input: &mut R) -> io::Result<i32> {
 }
 
 #[inline(always)]
-fn is_whitespace(ch:Option<u8>) -> bool {
+fn is_whitespace(ch: Option<u8>) -> bool {
     ch.map(|ch| b'\x09' <= ch && ch <= b'\x0d' || ch == b' ')
         .unwrap_or(false)
 }

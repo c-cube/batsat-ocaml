@@ -1,21 +1,17 @@
-SRC=$(wildcard src/*.rs)
-ARGS=-- -Z unstable-options --pretty=expanded
+test:
+	@cargo test --features=link -- --test-threads=1
+	@dune runtest --root=test --force
 
-pretty: $(SRC)
-	@cargo rustc $(ARGS)
-	@cd examples/rust && cargo rustc $(ARGS)
-	@cd examples/ocaml && make pretty
-	examples/ocaml/test
-
-test: $(SRC)
-	@cargo test
-	@cd examples/rust && cargo build
-	@cd examples/ocaml && make
-	examples/ocaml/test
+utop:
+	@dune utop --root=test
 
 clean:
 	cargo clean
-	cd examples/rust && cargo clean
-	cd examples/ocaml && make clean
+	dune clean --root=test
 
-.PHONE: test pretty clean
+publish:
+	cd sys && cargo package && cargo publish
+	cd derive && cargo package && cargo publish
+	cargo package && cargo publish
+
+.PHONY: test clean

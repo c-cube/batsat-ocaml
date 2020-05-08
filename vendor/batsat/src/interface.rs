@@ -1,9 +1,8 @@
-
 /* Main Interface */
 
 use crate::{
+    clause::{lbool, Lit, Var},
     theory::{self, Theory},
-    clause::{Var, Lit, lbool},
 };
 
 /// Main interface for a solver: it makes it possible to add clauses,
@@ -30,6 +29,9 @@ pub trait SolverInterface {
     /// Create a new variable with the default polarity
     fn new_var_default(&mut self) -> Var;
 
+    /// Get the i-th variable, possibly creating it if it doesn't already exist.
+    fn var_of_int(&mut self, i: u32) -> Var;
+
     /// Add a clause to the solver. Returns `false` if the solver is in
     /// an `UNSAT` state.
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool;
@@ -42,7 +44,7 @@ pub trait SolverInterface {
     }
 
     /// Simplify using the given theory.
-    fn simplify_th<Th:Theory>(&mut self, th: &mut Th) -> bool;
+    fn simplify_th<Th: Theory>(&mut self, th: &mut Th) -> bool;
 
     /// Search for a model that respects a given set of assumptions (with resource constraints).
     ///
@@ -54,7 +56,7 @@ pub trait SolverInterface {
     /// Solve using the given theory.
     ///
     /// - `th` is the theory.
-    fn solve_limited_th<Th:Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
+    fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
 
     /// Obtain the slice of literals that are proved at level 0.
     ///
@@ -93,3 +95,21 @@ pub trait SolverInterface {
     fn unsat_core_contains_var(&self, v: Var) -> bool;
 }
 
+#[cfg(test)]
+mod test {
+    use crate::*;
+    #[test]
+    fn test_reg7() {
+        let mut solver: Solver<callbacks::Basic> =
+            Solver::new(Default::default(), Default::default());
+        let a = Lit::new(solver.new_var_default(), false);
+        let b = Lit::new(solver.new_var_default(), false);
+        assert!(solver.add_clause_reuse(&mut vec![a, b]));
+        assert_eq!(solver.solve_limited(&[!b]), lbool::TRUE);
+        assert!(solver.add_clause_reuse(&mut vec![!a, b]));
+        assert!(solver.add_clause_reuse(&mut vec![!a, !b]));
+        // panics in #7
+        assert_eq!(solver.solve_limited(&[]), lbool::TRUE);
+        assert_eq!(solver.solve_limited(&[a]), lbool::FALSE);
+    }
+}

@@ -1,164 +1,137 @@
+/// `local!` can used to define local variables in OCaml functions
 #[macro_export]
-macro_rules! caml_ffi {
-    ($code:tt) => {
-        let mut caml_frame = $crate::core::memory::caml_local_roots.clone();
-        $code;
-        return
-    };
-
-    ($code:tt => $result:expr) => {
-        let mut caml_frame = $crate::core::memory::caml_local_roots;
-        $code;
-        return $crate::core::mlvalues::Value::from($result);
-    }
-}
-
-#[macro_export]
-/// Registers OCaml parameters with the GC
-macro_rules! caml_param {
-
-    (@step $idx:expr, $caml_roots:ident,) => {
-        $caml_roots.ntables = $idx;
-    };
-
-    (@step $idx:expr, $caml_roots:ident, $param:expr, $($tail:expr,)*) => {
-        $caml_roots.tables[$idx] = &mut $param;
-        caml_param!(@step $idx + 1usize, $caml_roots, $($tail,)*);
-    };
-
-    ($($n:expr),*) => {
-        let mut caml_roots: $crate::core::memory::CamlRootsBlock = ::std::default::Default::default();
-        caml_roots.next = $crate::core::memory::caml_local_roots;
-        $crate::core::memory::caml_local_roots = (&mut caml_roots) as *mut $crate::core::memory::CamlRootsBlock;
-        caml_roots.nitems = 1; // this is = N when CAMLxparamN is used
-        caml_param!(@step 0usize, caml_roots, $($n,)*);
-    }
-}
-
-/// Initializes and registers the given identifier(s) as a local value with the OCaml runtime.
-///
-/// ## Original C code
-///
-/// ```c
-/// #define CAMLlocal1(x) \
-/// value x = Val_unit; \
-/// CAMLxparam1 (x)
-/// ```
-///
-#[macro_export]
-macro_rules! caml_local {
+macro_rules! local {
     ($($local:ident),*) => {
-        $(let mut $local = $crate::value::Value::new($crate::core::mlvalues::UNIT);)*
-        caml_param!($($local.0),*);
+        #[allow(unused_mut)]
+        $(let mut $local = $crate::Value($crate::sys::UNIT);)*
+        #[allow(unused_unsafe)]
+        $crate::sys::caml_param!($($local.0),*);
     }
 }
 
+/// `frame!` can be used to create new local variables that play nicely with the garbage collector
 #[macro_export]
-/// Defines an OCaml FFI body, including any locals, as well as a return if provided; it is up to you to define the parameters.
-macro_rules! caml_body {
+macro_rules! frame {
+    (($($param:ident),*) $code:block) => {
+       {
+            #[allow(unused_unsafe)]
+            let caml_frame = unsafe { $crate::sys::local_roots() };
+            $crate::local!($($param),*);
+            #[allow(unused_mut)]
+            let mut res = || { $code };
+            let res = res();
 
-    (||, <$($local:ident),*>, $code:block) => {
-        let caml_frame = $crate::core::memory::caml_local_roots;
-        caml_local!($($local),*);
-        {
-            $(let mut $param = $crate::value::Value::new($param);
-            {
-                let _ = $param;
-            })*
-            $code;
+            #[allow(unused_unsafe)]
+            unsafe { $crate::sys::set_local_roots(caml_frame) };
+            res
         }
-        $crate::core::memory::caml_local_roots = caml_frame;
-    };
-
-    (|$($param:ident),*|, @code $code:block) => {
-        let caml_frame = $crate::core::memory::caml_local_roots;
-        caml_param!($($param),*);
-        {
-            $(let mut $param = $crate::value::Value::new($param);
-            {
-                let _ = $param;
-            })*
-            $code;
-        }
-        $crate::core::memory::caml_local_roots = caml_frame;
-    };
-
-    (|$($param:ident),*|, <$($local:ident),*>, $code:block) => {
-        let caml_frame = $crate::core::memory::caml_local_roots;
-        caml_param!($($param),*);
-        caml_local!($($local),*);
-        {
-            $(let mut $param = $crate::value::Value::new($param);
-            {
-                let _ = $param;
-            })*
-            $code;
-        }
-        $crate::core::memory::caml_local_roots = caml_frame;
     }
 }
 
+/// `body!` is needed to help the OCaml runtime to manage garbage collection, it should
+/// be used to wrap the body of each function exported to OCaml.
+///
+/// ```rust
+/// #[no_mangle]
+/// pub extern "C" fn example(a: ocaml::Value, b: ocaml::Value) -> ocaml::Value {
+///     ocaml::body!((a, b) {
+///         let a = a.int_val();
+///         let b = b.int_val();
+///         ocaml::Value::int(a + b)
+///     })
+/// }
+/// ```
 #[macro_export]
-/// Defines an external Rust function for FFI use by an OCaml program, with automatic `CAMLparam`, `CAMLlocal`, and `CAMLreturn` inserted for you.
-macro_rules! caml {
-    ($name:ident, |$($param:ident),*|, <$($local:ident),*>, $code:block -> $retval:ident) => {
-        #[allow(unused_mut)]
-        #[no_mangle]
-        pub unsafe extern fn $name ($(mut $param: $crate::core::mlvalues::Value,)*) -> $crate::core::mlvalues::Value {
-            caml_body!(|$($param),*|, <$($local),*>, $code);
-            return $crate::core::mlvalues::Value::from($retval)
-        }
-    };
-
-    ($name:ident, |$($param:ident),*|, <$($local:ident),*>, $code:block) => {
-        #[allow(unused_mut)]
-        #[no_mangle]
-        pub unsafe extern fn $name ($(mut $param: $crate::core::mlvalues::Value,)*) -> $crate::core::mlvalues::Value {
-            caml_body!(|$($param),*|, <$($local),*>, $code);
-            return;
-        }
-    };
-
-    ($name:ident, |$($param:ident),*|, $code:block) => {
-        #[allow(unused_mut)]
-        #[no_mangle]
-        pub unsafe extern fn $name ($(mut $param: $crate::core::mlvalues::Value,)*) {
-            caml_body!(|$($param),*|, @code $code);
-            return;
-        }
-    };
-
-    ($name:ident, |$($param:ident),*|, $code:block -> $retval:ident) => {
-        #[allow(unused_mut)]
-        #[no_mangle]
-        pub unsafe extern fn $name ($(mut $param: $crate::core::mlvalues::Value,)*) -> $crate::core::mlvalues::Value {
-            caml_body!(|$($param),*|, @code $code);
-            return $crate::core::mlvalues::Value::from($retval);
-        }
-    };
-
-}
-
-#[macro_export]
-/// Create an OCaml tuple
-macro_rules! tuple {
-    ($($x:expr),*) => {
-        $crate::Tuple::from(&[$($x.to_value(),)*]).into()
+#[cfg(feature = "no-std")]
+macro_rules! body {
+    ($(($($param:expr),*))? $code:block) => {
+        $crate::sys::caml_body!($(($($param.0),*))? $code);
     }
 }
 
+#[cfg(not(feature = "no-std"))]
+static PANIC_HANDLER_INIT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(not(feature = "no-std"))]
+#[doc(hidden)]
+pub fn init_panic_handler() {
+    if PANIC_HANDLER_INIT.compare_and_swap(false, true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+
+    ::std::panic::set_hook(Box::new(|info| {
+        let err = info.payload();
+        let msg = if err.is::<&str>() {
+            err.downcast_ref::<&str>().unwrap()
+        } else if err.is::<String>() {
+            err.downcast_ref::<String>().unwrap().as_ref()
+        } else {
+            "rust panic"
+        };
+
+        crate::Error::raise_failure(msg)
+    }))
+}
+
+/// `body!` is needed to help the OCaml runtime to manage garbage collection, it should
+/// be used to wrap the body of each function exported to OCaml. Panics from Rust code
+/// will automatically be unwound/caught here (unless the `no-std` feature is enabled)
+///
+/// ```rust
+/// #[no_mangle]
+/// pub extern "C" fn example(a: ocaml::Value, b: ocaml::Value) -> ocaml::Value {
+///     ocaml::body!((a, b) {
+///         let a = a.int_val();
+///         let b = b.int_val();
+///         ocaml::Value::int(a + b)
+///     })
+/// }
+/// ```
 #[macro_export]
-/// Create an OCaml array
+#[cfg(not(feature = "no-std"))]
+macro_rules! body {
+    ($(($($param:expr),*))? $code:block) => {{
+        // Ensure panic handler is initialized
+        $crate::init_panic_handler();
+
+        // Initialize OCaml frame
+        #[allow(unused_unsafe)]
+        let caml_frame = unsafe { $crate::sys::local_roots() };
+
+        // Initialize parameters
+        $(
+            $crate::sys::caml_param!($($param.0),*);
+        )?
+
+        // Execute Rust function
+        #[allow(unused_mut)]
+        let mut res = || {$code };
+        let res = res();
+
+        #[allow(unused_unsafe)]
+        unsafe { $crate::sys::set_local_roots(caml_frame) };
+
+        res
+    }}
+}
+
+#[macro_export]
+/// Convenience macro to create an OCaml array
 macro_rules! array {
-    ($($x:expr),*) => {
-        $crate::Array::from(&[$($x.to_value(),)*]).into()
-    }
+    ($($x:expr),*) => {{
+        $crate::ToValue::to_value(&vec![$($crate::ToValue::to_value(&$x)),*])
+    }}
 }
 
 #[macro_export]
-/// Create an OCaml list
+/// Convenience macro to create an OCaml list
 macro_rules! list {
-    ($($x:expr),*) => {
-        $crate::List::from(&[$($x.to_value(),)*]).into()
-    }
+    ($($x:expr),*) => {{
+        let mut l = $crate::list::empty();
+        for i in (&[$($x),*]).into_iter().rev() {
+            $crate::list::push_hd(&mut l, $crate::ToValue::to_value(i));
+        }
+        l
+    }};
 }
