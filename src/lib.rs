@@ -5,11 +5,8 @@ extern crate ocaml;
 use ocaml::{Pointer, Value};
 use std::default::Default;
 
-use std::mem;
-use std::ops;
-use std::ptr;
-
 use batsat::{lbool, BasicSolver as InnerSolver, Lit, SolverInterface, Var};
+use std::ops;
 
 pub struct Solver {
     s: InnerSolver,
