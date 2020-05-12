@@ -87,9 +87,7 @@ impl ops::DerefMut for Solver {
 
 #[ocaml::func]
 pub fn ml_batsat_new() -> Pointer<Solver> {
-    eprintln!("new");
     let r = Pointer::alloc_custom(Solver::new());
-    eprintln!("return new");
     r
 }
 
