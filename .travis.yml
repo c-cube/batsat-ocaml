@@ -8,8 +8,7 @@ env:
   - PINS="batsat:."
   - DISTRO="debian-unstable"
   matrix:
-  - PACKAGE="batsat" OCAML_VERSION="4.03"
-  - PACKAGE="batsat" OCAML_VERSION="4.04"
-  - PACKAGE="batsat" OCAML_VERSION="4.05"
+    #- PACKAGE="batsat" OCAML_VERSION="4.03"
   - PACKAGE="batsat" OCAML_VERSION="4.06"
   - PACKAGE="batsat" OCAML_VERSION="4.07"
+  - PACKAGE="batsat" OCAML_VERSION="4.10"
