@@ -34,6 +34,12 @@ build-rust-stubs: cargo-config-file
 
 all: build test
 
+VERSION=$(shell awk '/^version:/ {print $$2}' batsat.opam)
+update_next_tag:
+	@echo "update version to $(VERSION)..."
+	sed -i "s/NEXT_VERSION/$(VERSION)/g" $(wildcard src/*.ml) $(wildcard src/*.mli)
+	sed -i "s/NEXT_RELEASE/$(VERSION)/g" $(wildcard src/*.ml) $(wildcard src/*.mli)
+
 reindent:
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 echo "reindenting: "
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 ocp-indent -i
