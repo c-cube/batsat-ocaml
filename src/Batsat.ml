@@ -15,8 +15,8 @@ module Lit = struct
   let to_int n = n
   let to_string x = (if sign x then "" else "-") ^ string_of_int (abs @@ to_int x)
   let pp out x = Format.pp_print_string out (to_string x)
-  let equal : t -> t -> bool = Pervasives.(=)
-  let compare : t -> t -> int = Pervasives.compare
+  let equal : t -> t -> bool = (=)
+  let compare : t -> t -> int = compare
   let hash : t -> int = Hashtbl.hash
 end
 
@@ -57,7 +57,7 @@ let create () =
 
 exception Unsat
 
-let check_ret_ b =
+let[@inline] check_ret_ b =
   if not b then raise Unsat
 
 let add_clause_a s lits =
@@ -78,7 +78,7 @@ let pp_clause out l =
     l;
   Format.fprintf out "@]]"
 
-let simplify s = Raw.simplify s |> check_ret_
+let[@inline] simplify s = Raw.simplify s |> check_ret_
 let n_vars = Raw.nvars
 let n_clauses = Raw.nclauses
 let n_conflicts = Raw.nconflicts
@@ -103,7 +103,7 @@ type value =
   | V_undef
   | V_true
   | V_false
-let string_of_value = function
+let[@inline] string_of_value = function
   | V_undef -> "undef"
   | V_true -> "true"
   | V_false -> "false"
