@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "batsat"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
 exclude = ["../../benchs", "../../papers", "../../scripts"]
 publish = true

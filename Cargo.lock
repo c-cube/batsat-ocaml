@@ -2,7 +2,7 @@
 # It is not intended for manual editing.
 [[package]]
 name = "batsat"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bit-vec 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -12,7 +12,7 @@ dependencies = [
 name = "batsat-stubs"
 version = "0.1.0"
 dependencies = [
- "batsat 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "batsat 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ocaml 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "ocaml-sys 0.12.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -98,7 +98,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [metadata]
-"checksum batsat 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "0b9266675ccdd413753b121a32bee40421e3ac5c4f7a92a37059ac9e3edab59e"
+"checksum batsat 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c46275d5d413790e96e7a74bab90591ba0aad8117662fadee8ba266685e5908a"
 "checksum bit-vec 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f59bbe95d4e52a6398ec21238d31577f2b28a9d86807f06ca59d191d8440d0bb"
 "checksum cty 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7313c0d620d0cb4dbd9d019e461a4beb501071ff46ec0ab933efb4daa76d73e3"
 "checksum ocaml 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)" = "bcbb62e3ed112cb1efc0cf7e582e516cb47272cd72e7ff8ca533a4ddfe8d310e"
