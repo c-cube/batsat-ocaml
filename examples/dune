@@ -1,0 +1,6 @@
+(executable
+  (name solver)
+  (libraries containers batsat)
+  (flags :standard -warn-error -a+8))
+
+(ocamllex (modules lexer))
