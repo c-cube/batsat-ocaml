@@ -21,6 +21,11 @@ module Lit : sig
       {b NOTE} [n] must be strictly positive. Use {!neg} to obtain
       the negation of a literal. *)
 
+  val make_with_sign : bool -> int -> t
+  (** [make_with_sign b x] is [if b then make x else neg (make x)].
+      It applies the given sign to [make x].
+      @since NEXT_RELEASE *)
+
   val neg : t -> t
   (** Negation of a literal.
       Invariant: [neg (neg x) = x] *)
@@ -58,7 +63,14 @@ val simplify : t -> unit
 (** @raise Unsat if the problem is unsat *)
 
 val solve : ?assumptions:assumptions -> t -> unit
-(** @raise Unsat if the problem is unsat *)
+(** Solve the problem made by adding clauses using {!add_clause_l}
+    or {!add_clause_a}.
+    @raise Unsat if the problem is unsat *)
+
+val solve_is_sat : ?assumptions:assumptions -> t -> bool
+(** Same as {!solve} but does not raise if unsat.
+    @since NEXT_RELEASE
+*)
 
 val n_vars : t -> int
 val n_clauses : t -> int

@@ -127,6 +127,7 @@ pub fn ml_batsat_assume(mut solver: Pointer<Solver>, lit: isize) {
 
 #[ocaml::func]
 pub fn ml_batsat_solve(mut solver: Pointer<Solver>) -> bool {
+    ocaml::release_lock();
     let solver = solver.as_mut();
     let r = {
         let (s, _, assumptions) = solver.decompose();
@@ -136,6 +137,7 @@ pub fn ml_batsat_solve(mut solver: Pointer<Solver>) -> bool {
         lb != lbool::FALSE
     };
     //println!("res: {:?}, model: {:?}", r, solver.get_model());
+    ocaml::acquire_lock();
     r
 }
 
