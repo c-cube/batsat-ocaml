@@ -1,6 +1,8 @@
 
 module B = Batsat
 
+let spf = Printf.sprintf
+
 module Parse : sig
   type 'a event =
     | Add_clause of 'a array
@@ -53,7 +55,11 @@ end = struct
       f (Add_clause c); iter self f
 end
 
+
+(* solve a single file *)
 let solve_file ~debug file : unit =
+  Tracy.with_ ~file:__FILE__ ~line:__LINE__ ~name:"solve" () @@ fun _sp ->
+  Tracy.add_text _sp file;
   let solver = B.create() in
   let parse =
     Parse.make ~file (fun i ->
@@ -68,16 +74,57 @@ let solve_file ~debug file : unit =
           B.add_clause_a solver c);
 
     B.solve solver;
-    Format.printf "sat@."
+    Format.printf "%s: sat@." file
   with B.Unsat ->
-    Format.printf "unsat@."
+    Format.printf "%s: unsat@." file
+
+type task =
+  | T_solve of string
+  | T_exit
+
+let solve_files_par ~debug ~j (files:_ list) : unit =
+  let module Q = CCBlockingQueue in
+
+  let tasks = Q.create 16 in
+
+  let worker i =
+    let rec loop() : unit =
+      match Q.take tasks with
+      | T_exit -> ()
+      | T_solve file ->
+        solve_file ~debug file;
+        loop()
+    in
+    Tracy.name_thread (spf "worker %d" i);
+    loop()
+  in
+
+  (* start workers *)
+  let pool = Array.init j (fun _i -> Thread.create worker _i) in
+
+  begin
+    let t_list = CCList.map (fun f -> T_solve f) files in
+    Q.push_list tasks t_list
+  end;
+
+  begin
+    Tracy.with_ ~file:__FILE__ ~line:__LINE__ ~name:"cleanup" () @@ fun _ ->
+    for _=0 to j-1 do Q.push tasks T_exit done;
+    Array.iter Thread.join pool;
+  end;
+
+  ()
 
 let () =
   let files = ref [] in
   let debug = ref false in
+  let j = ref 4 in
   let opts = [
     "-d", Arg.Set debug, " debug";
+    "-j", Arg.Set_int j, " <int> number of tasks";
   ] |> Arg.align in
   Arg.parse opts (fun f -> files := f :: !files) "solver [options] <file>";
-  List.iter (fun f -> solve_file ~debug:!debug f) !files;
+
+  Tracy.name_thread "main";
+  solve_files_par ~debug:!debug ~j:!j !files;
   ()
