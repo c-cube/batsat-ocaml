@@ -90,7 +90,7 @@ let solve_files_par ~debug ~j (files:_ list) : unit =
   let worker i =
     let rec loop() : unit =
       match Q.take tasks with
-      | T_exit -> ()
+      | T_exit -> Tracy.message "exit"; ()
       | T_solve file ->
         solve_file ~debug file;
         loop()
@@ -125,6 +125,7 @@ let () =
   ] |> Arg.align in
   Arg.parse opts (fun f -> files := f :: !files) "solver [options] <file>";
 
+  Tracy.enable();
   Tracy.name_thread "main";
   solve_files_par ~debug:!debug ~j:!j !files;
   ()
