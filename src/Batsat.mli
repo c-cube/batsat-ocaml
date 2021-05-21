@@ -24,7 +24,7 @@ module Lit : sig
   val make_with_sign : bool -> int -> t
   (** [make_with_sign b x] is [if b then make x else neg (make x)].
       It applies the given sign to [make x].
-      @since NEXT_RELEASE *)
+      @since 0.6 *)
 
   val neg : t -> t
   (** Negation of a literal.
@@ -69,7 +69,7 @@ val solve : ?assumptions:assumptions -> t -> unit
 
 val solve_is_sat : ?assumptions:assumptions -> t -> bool
 (** Same as {!solve} but does not raise if unsat.
-    @since NEXT_RELEASE
+    @since 0.6
 *)
 
 val n_vars : t -> int
