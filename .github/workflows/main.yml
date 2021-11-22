@@ -9,6 +9,7 @@ jobs:
         # operating-system: [macos-latest, ubuntu-latest, windows-latest]
         operating-system:
           - ubuntu-latest
+          - macos-latest
         ocaml-version:
           - 4.08.x
     steps:
