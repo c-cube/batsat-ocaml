@@ -1,9 +1,7 @@
-extern crate batsat;
-extern crate ocaml;
-
 #[link(name = "batsat")]
-use ocaml::{Pointer, Value};
-use std::default::Default;
+use ocaml::Pointer;
+use once_cell::sync::Lazy;
+use std::{default::Default, sync::Mutex};
 
 use batsat::{lbool, BasicSolver as InnerSolver, Lit, SolverInterface, Var};
 use std::ops;
@@ -19,27 +17,19 @@ struct SolverPtr(*mut Solver);
 
 /// Use a custom block to manipulate the solver
 impl ocaml::Custom for SolverPtr {
-    const TYPE: ocaml::custom::CustomType = ocaml::custom::CustomType {
-        name: "solver",
-        fixed_length: None,
-        ops: ocaml::custom::CustomOps {
-            identifier: b"solver\0".as_ptr() as *const ocaml::sys::Char,
-            finalize: Some(delete_solver_value),
-            compare_ext: None,
-            compare: None,
-            hash: None,
-            serialize: None,
-            deserialize: None,
-            fixed_length: std::ptr::null(),
-        },
+    const NAME: &'static str = "solver";
+    const OPS: ocaml::custom::CustomOps = ocaml::custom::CustomOps {
+        identifier: b"solver\0".as_ptr() as *mut ocaml::sys::Char,
+        finalize: Some(delete_solver_value),
+        ..ocaml::custom::DEFAULT_CUSTOM_OPS
     };
     const USED: usize = 1;
     const MAX: usize = 1000;
 }
 
-unsafe extern "C" fn delete_solver_value(v: Value) {
+unsafe extern "C" fn delete_solver_value(v: ocaml::Raw) {
     //eprintln!("delete value");
-    let p: *mut SolverPtr = v.custom_mut_ptr_val();
+    let p: *mut SolverPtr = v.as_pointer().as_mut_ptr();
     let solver_ptr = &mut *p;
     if solver_ptr.0.is_null() {
         panic!("double free")
@@ -143,22 +133,23 @@ pub fn ml_batsat_assume(mut solver: Pointer<SolverPtr>, lit: isize) {
     solver.assumptions.push(lit);
 }
 
+static RUNTIME: Lazy<Mutex<ocaml::Runtime>> = Lazy::new(|| Mutex::new(ocaml::Runtime::init()));
+
 #[ocaml::func]
 pub fn ml_batsat_solve(mut solver: Pointer<SolverPtr>) -> bool {
     // the inner pointer cannot move, even though the ocaml value will
     // once we release the lock
     let solver = solver.as_mut().get();
 
-    ocaml::release_lock();
-    let r = {
+    let mut runtime = RUNTIME.lock().unwrap();
+    let r = runtime.releasing_runtime(|| {
         let (s, _, assumptions) = solver.decompose();
         let lb = s.solve_limited(&assumptions);
         assumptions.clear(); // reset assumptions
         assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
         lb != lbool::FALSE
-    };
+    });
     //println!("res: {:?}, model: {:?}", r, solver.get_model());
-    ocaml::acquire_lock();
     r
 }
 
