@@ -18,7 +18,6 @@ dependencies = [
  "batsat",
  "ocaml",
  "ocaml-sys",
- "once_cell",
 ]
 
 [[package]]
@@ -91,12 +90,6 @@ checksum = "2e8d1ec034dbef9fde8fd34a325b245f316c6dec5ab4f2512ba8cfd43564654a"
 dependencies = [
  "chlorine",
 ]
-
-[[package]]
-name = "once_cell"
-version = "1.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
 
 [[package]]
 name = "proc-macro2"

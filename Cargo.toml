@@ -9,7 +9,6 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 
-once_cell = "^1.8"
 ocaml = "^0.22"
 ocaml-sys = "^0.22"
 batsat = "^0.5"

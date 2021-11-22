@@ -1,7 +1,6 @@
 #[link(name = "batsat")]
 use ocaml::Pointer;
-use once_cell::sync::Lazy;
-use std::{default::Default, sync::Mutex};
+use std::default::Default;
 
 use batsat::{lbool, BasicSolver as InnerSolver, Lit, SolverInterface, Var};
 use std::ops;
@@ -133,16 +132,13 @@ pub fn ml_batsat_assume(mut solver: Pointer<SolverPtr>, lit: isize) {
     solver.assumptions.push(lit);
 }
 
-static RUNTIME: Lazy<Mutex<ocaml::Runtime>> = Lazy::new(|| Mutex::new(ocaml::Runtime::init()));
-
 #[ocaml::func]
 pub fn ml_batsat_solve(mut solver: Pointer<SolverPtr>) -> bool {
     // the inner pointer cannot move, even though the ocaml value will
     // once we release the lock
     let solver = solver.as_mut().get();
 
-    let mut runtime = RUNTIME.lock().unwrap();
-    let r = runtime.releasing_runtime(|| {
+    let r = gc.releasing_runtime(|| {
         let (s, _, assumptions) = solver.decompose();
         let lb = s.solve_limited(&assumptions);
         assumptions.clear(); // reset assumptions
