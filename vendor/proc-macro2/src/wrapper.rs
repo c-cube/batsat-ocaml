@@ -1,7 +1,7 @@
 use crate::detection::inside_proc_macro;
 use crate::{fallback, Delimiter, Punct, Spacing, TokenTree};
-use std::fmt;
-use std::iter;
+use std::fmt::{self, Debug, Display};
+use std::iter::FromIterator;
 use std::ops::RangeBounds;
 use std::panic;
 #[cfg(super_unstable)]
@@ -29,6 +29,14 @@ pub(crate) enum LexError {
     Fallback(fallback::LexError),
 }
 
+impl LexError {
+    fn call_site() -> Self {
+        LexError::Fallback(fallback::LexError {
+            span: fallback::Span::call_site(),
+        })
+    }
+}
+
 fn mismatch() -> ! {
     panic!("stable/nightly mismatch")
 }
@@ -46,7 +54,12 @@ impl DeferredTokenStream {
     }
 
     fn evaluate_now(&mut self) {
-        self.stream.extend(self.extra.drain(..));
+        // If-check provides a fast short circuit for the common case of `extra`
+        // being empty, which saves a round trip over the proc macro bridge.
+        // Improves macro expansion time in winrt by 6% in debug mode.
+        if !self.extra.is_empty() {
+            self.stream.extend(self.extra.drain(..));
+        }
     }
 
     fn into_token_stream(mut self) -> proc_macro::TokenStream {
@@ -102,15 +115,15 @@ impl FromStr for TokenStream {
 
 // Work around https://github.com/rust-lang/rust/issues/58736.
 fn proc_macro_parse(src: &str) -> Result<proc_macro::TokenStream, LexError> {
-    panic::catch_unwind(|| src.parse().map_err(LexError::Compiler))
-        .unwrap_or(Err(LexError::Fallback(fallback::LexError)))
+    let result = panic::catch_unwind(|| src.parse().map_err(LexError::Compiler));
+    result.unwrap_or_else(|_| Err(LexError::call_site()))
 }
 
-impl fmt::Display for TokenStream {
+impl Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TokenStream::Compiler(tts) => tts.clone().into_token_stream().fmt(f),
-            TokenStream::Fallback(tts) => tts.fmt(f),
+            TokenStream::Compiler(tts) => Display::fmt(&tts.clone().into_token_stream(), f),
+            TokenStream::Fallback(tts) => Display::fmt(tts, f),
         }
     }
 }
@@ -145,9 +158,9 @@ fn into_compiler_token(token: TokenTree) -> proc_macro::TokenTree {
                 Spacing::Joint => proc_macro::Spacing::Joint,
                 Spacing::Alone => proc_macro::Spacing::Alone,
             };
-            let mut op = proc_macro::Punct::new(tt.as_char(), spacing);
-            op.set_span(tt.span().inner.unwrap_nightly());
-            op.into()
+            let mut punct = proc_macro::Punct::new(tt.as_char(), spacing);
+            punct.set_span(tt.span().inner.unwrap_nightly());
+            punct.into()
         }
         TokenTree::Ident(tt) => tt.inner.unwrap_nightly().into(),
         TokenTree::Literal(tt) => tt.inner.unwrap_nightly().into(),
@@ -164,7 +177,7 @@ impl From<TokenTree> for TokenStream {
     }
 }
 
-impl iter::FromIterator<TokenTree> for TokenStream {
+impl FromIterator<TokenTree> for TokenStream {
     fn from_iter<I: IntoIterator<Item = TokenTree>>(trees: I) -> Self {
         if inside_proc_macro() {
             TokenStream::Compiler(DeferredTokenStream::new(
@@ -176,7 +189,7 @@ impl iter::FromIterator<TokenTree> for TokenStream {
     }
 }
 
-impl iter::FromIterator<TokenStream> for TokenStream {
+impl FromIterator<TokenStream> for TokenStream {
     fn from_iter<I: IntoIterator<Item = TokenStream>>(streams: I) -> Self {
         let mut streams = streams.into_iter();
         match streams.next() {
@@ -201,14 +214,15 @@ impl iter::FromIterator<TokenStream> for TokenStream {
 }
 
 impl Extend<TokenTree> for TokenStream {
-    fn extend<I: IntoIterator<Item = TokenTree>>(&mut self, streams: I) {
+    fn extend<I: IntoIterator<Item = TokenTree>>(&mut self, stream: I) {
         match self {
             TokenStream::Compiler(tts) => {
                 // Here is the reason for DeferredTokenStream.
-                tts.extra
-                    .extend(streams.into_iter().map(into_compiler_token));
+                for token in stream {
+                    tts.extra.push(into_compiler_token(token));
+                }
             }
-            TokenStream::Fallback(tts) => tts.extend(streams),
+            TokenStream::Fallback(tts) => tts.extend(stream),
         }
     }
 }
@@ -219,20 +233,29 @@ impl Extend<TokenStream> for TokenStream {
             TokenStream::Compiler(tts) => {
                 tts.evaluate_now();
                 tts.stream
-                    .extend(streams.into_iter().map(|stream| stream.unwrap_nightly()));
+                    .extend(streams.into_iter().map(TokenStream::unwrap_nightly));
             }
             TokenStream::Fallback(tts) => {
-                tts.extend(streams.into_iter().map(|stream| stream.unwrap_stable()));
+                tts.extend(streams.into_iter().map(TokenStream::unwrap_stable));
             }
         }
     }
 }
 
-impl fmt::Debug for TokenStream {
+impl Debug for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TokenStream::Compiler(tts) => tts.clone().into_token_stream().fmt(f),
-            TokenStream::Fallback(tts) => tts.fmt(f),
+            TokenStream::Compiler(tts) => Debug::fmt(&tts.clone().into_token_stream(), f),
+            TokenStream::Fallback(tts) => Debug::fmt(tts, f),
+        }
+    }
+}
+
+impl LexError {
+    pub(crate) fn span(&self) -> Span {
+        match self {
+            LexError::Compiler(_) => Span::call_site(),
+            LexError::Fallback(e) => Span::Fallback(e.span()),
         }
     }
 }
@@ -249,11 +272,28 @@ impl From<fallback::LexError> for LexError {
     }
 }
 
-impl fmt::Debug for LexError {
+impl Debug for LexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            LexError::Compiler(e) => e.fmt(f),
-            LexError::Fallback(e) => e.fmt(f),
+            LexError::Compiler(e) => Debug::fmt(e, f),
+            LexError::Fallback(e) => Debug::fmt(e, f),
+        }
+    }
+}
+
+impl Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            #[cfg(lexerror_display)]
+            LexError::Compiler(e) => Display::fmt(e, f),
+            #[cfg(not(lexerror_display))]
+            LexError::Compiler(_e) => Display::fmt(
+                &fallback::LexError {
+                    span: fallback::Span::call_site(),
+                },
+                f,
+            ),
+            LexError::Fallback(e) => Display::fmt(e, f),
         }
     }
 }
@@ -310,7 +350,7 @@ impl Iterator for TokenTreeIter {
     }
 }
 
-impl fmt::Debug for TokenTreeIter {
+impl Debug for TokenTreeIter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("TokenTreeIter").finish()
     }
@@ -346,11 +386,11 @@ impl SourceFile {
 }
 
 #[cfg(super_unstable)]
-impl fmt::Debug for SourceFile {
+impl Debug for SourceFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SourceFile::Compiler(a) => a.fmt(f),
-            SourceFile::Fallback(a) => a.fmt(f),
+            SourceFile::Compiler(a) => Debug::fmt(a, f),
+            SourceFile::Fallback(a) => Debug::fmt(a, f),
         }
     }
 }
@@ -376,6 +416,15 @@ impl Span {
         }
     }
 
+    #[cfg(hygiene)]
+    pub fn mixed_site() -> Span {
+        if inside_proc_macro() {
+            Span::Compiler(proc_macro::Span::mixed_site())
+        } else {
+            Span::Fallback(fallback::Span::mixed_site())
+        }
+    }
+
     #[cfg(super_unstable)]
     pub fn def_site() -> Span {
         if inside_proc_macro() {
@@ -385,19 +434,29 @@ impl Span {
         }
     }
 
-    #[cfg(super_unstable)]
     pub fn resolved_at(&self, other: Span) -> Span {
         match (self, other) {
+            #[cfg(hygiene)]
             (Span::Compiler(a), Span::Compiler(b)) => Span::Compiler(a.resolved_at(b)),
+
+            // Name resolution affects semantics, but location is only cosmetic
+            #[cfg(not(hygiene))]
+            (Span::Compiler(_), Span::Compiler(_)) => other,
+
             (Span::Fallback(a), Span::Fallback(b)) => Span::Fallback(a.resolved_at(b)),
             _ => mismatch(),
         }
     }
 
-    #[cfg(super_unstable)]
     pub fn located_at(&self, other: Span) -> Span {
         match (self, other) {
+            #[cfg(hygiene)]
             (Span::Compiler(a), Span::Compiler(b)) => Span::Compiler(a.located_at(b)),
+
+            // Name resolution affects semantics, but location is only cosmetic
+            #[cfg(not(hygiene))]
+            (Span::Compiler(_), Span::Compiler(_)) => *self,
+
             (Span::Fallback(a), Span::Fallback(b)) => Span::Fallback(a.located_at(b)),
             _ => mismatch(),
         }
@@ -491,11 +550,11 @@ impl From<fallback::Span> for Span {
     }
 }
 
-impl fmt::Debug for Span {
+impl Debug for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Span::Compiler(s) => s.fmt(f),
-            Span::Fallback(s) => s.fmt(f),
+            Span::Compiler(s) => Debug::fmt(s, f),
+            Span::Fallback(s) => Debug::fmt(s, f),
         }
     }
 }
@@ -601,20 +660,20 @@ impl From<fallback::Group> for Group {
     }
 }
 
-impl fmt::Display for Group {
+impl Display for Group {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Group::Compiler(group) => group.fmt(formatter),
-            Group::Fallback(group) => group.fmt(formatter),
+            Group::Compiler(group) => Display::fmt(group, formatter),
+            Group::Fallback(group) => Display::fmt(group, formatter),
         }
     }
 }
 
-impl fmt::Debug for Group {
+impl Debug for Group {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Group::Compiler(group) => group.fmt(formatter),
-            Group::Fallback(group) => group.fmt(formatter),
+            Group::Compiler(group) => Debug::fmt(group, formatter),
+            Group::Fallback(group) => Debug::fmt(group, formatter),
         }
     }
 }
@@ -696,20 +755,20 @@ where
     }
 }
 
-impl fmt::Display for Ident {
+impl Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ident::Compiler(t) => t.fmt(f),
-            Ident::Fallback(t) => t.fmt(f),
+            Ident::Compiler(t) => Display::fmt(t, f),
+            Ident::Fallback(t) => Display::fmt(t, f),
         }
     }
 }
 
-impl fmt::Debug for Ident {
+impl Debug for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ident::Compiler(t) => t.fmt(f),
-            Ident::Fallback(t) => t.fmt(f),
+            Ident::Compiler(t) => Debug::fmt(t, f),
+            Ident::Fallback(t) => Debug::fmt(t, f),
         }
     }
 }
@@ -857,20 +916,51 @@ impl From<fallback::Literal> for Literal {
     }
 }
 
-impl fmt::Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Literal::Compiler(t) => t.fmt(f),
-            Literal::Fallback(t) => t.fmt(f),
+impl FromStr for Literal {
+    type Err = LexError;
+
+    fn from_str(repr: &str) -> Result<Self, Self::Err> {
+        if inside_proc_macro() {
+            #[cfg(literal_from_str)]
+            {
+                proc_macro::Literal::from_str(repr)
+                    .map(Literal::Compiler)
+                    .map_err(LexError::Compiler)
+            }
+            #[cfg(not(literal_from_str))]
+            {
+                let tokens = proc_macro_parse(repr)?;
+                let mut iter = tokens.into_iter();
+                if let (Some(proc_macro::TokenTree::Literal(literal)), None) =
+                    (iter.next(), iter.next())
+                {
+                    if literal.to_string().len() == repr.len() {
+                        return Ok(Literal::Compiler(literal));
+                    }
+                }
+                Err(LexError::call_site())
+            }
+        } else {
+            let literal = fallback::Literal::from_str(repr)?;
+            Ok(Literal::Fallback(literal))
         }
     }
 }
 
-impl fmt::Debug for Literal {
+impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Literal::Compiler(t) => t.fmt(f),
-            Literal::Fallback(t) => t.fmt(f),
+            Literal::Compiler(t) => Display::fmt(t, f),
+            Literal::Fallback(t) => Display::fmt(t, f),
+        }
+    }
+}
+
+impl Debug for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Literal::Compiler(t) => Debug::fmt(t, f),
+            Literal::Fallback(t) => Debug::fmt(t, f),
         }
     }
 }
