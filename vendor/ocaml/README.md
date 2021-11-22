@@ -10,6 +10,8 @@ Works with OCaml versions `4.06.0` and up
 
 Please report any issues on [github](https://github.com/zshipko/ocaml-rs/issues)
 
+NOTE: While `ocaml-rs` *can* be used safely, it does not prevent a wide range of potential errors or mistakes. It should be thought of as a Rust implementation of the existing C API. [ocaml-interop](https://github.com/simplestaking/ocaml-interop) can be used to perform safe OCaml/Rust interop. The latest version of `ocaml-rs` actually uses `ocaml-interop` behind the scenes to interact with the garbage collector. `ocaml-rs` also exports an `interop` module, which is an alias for `ocaml_interop` and the two interfaces can be combined if desired.
+
 ### Getting started
 
 Take a look at the [ocaml-rust-starter](http://github.com/zshipko/ocaml-rust-starter) project for a basic example to help get started with `ocaml-rs`.
@@ -43,12 +45,26 @@ cargo vendor
 
 then follow the instructions for editing `.cargo/config`
 
+### Build options
+
+By default, building `ocaml-sys` will invoke the `ocamlopt` command to figure out the version and location of the OCaml compiler. There are a few environment variables to control this.
+
+- `OCAMLOPT` (default: `ocamlopt`) is the command that will invoke `ocamlopt`
+- `OCAML_VERSION` (default: result of `$OCAMLOPT -version`) is the target runtime OCaml version.
+- `OCAML_WHERE_PATH` (default: result of `$OCAMLOPT -where`) is the path of the OCaml standard library.
+- `OCAML_INTEROP_NO_CAML_STARTUP` (default: unset) can be set when loading an `ocaml-rs` library into an OCaml
+  bytecode runtime (such as `utop`) to avoid linking issues with `caml_startup`
+
+If both `OCAML_VERSION` and `OCAML_WHERE_PATH` are present, their values are used without invoking `ocamlopt`. If any of those two env variables is undefined, then `ocamlopt` will be invoked to obtain both values.
+
+Defining the `OCAML_VERSION` and `OCAML_WHERE_PATH` variables is useful for saving time in CI environments where an OCaml install is not really required (to run `clippy` for example).
+
 ### Features
 
 - `derive`
-  * enabled by default, adds `#[ocaml::func]` and friends and `derive` implementations for `FromValue` and `ToValue`
+  * enabled by default, adds `#[ocaml::func]` and friends and `derive` implementations for `FromValue` and `IntoValue`
 - `link`
-  * link the native OCaml runtime, this enables `ocaml::runtime::init`, which is equivalent to `caml_main`
+  * link the native OCaml runtime, this should only be used when no OCaml code will be linked statically
 - `no-std`
   * Allows `ocaml` to be used in `#![no_std]` environments like MirageOS
 
@@ -59,8 +75,8 @@ then follow the instructions for editing `.cargo/config`
 ### Examples
 
 ```rust
-// Automatically derive `ToValue` and `FromValue`
-#[derive(ocaml::ToValue, ocaml::FromValue)]
+// Automatically derive `IntoValue` and `FromValue`
+#[derive(ocaml::IntoValue, ocaml::FromValue)]
 struct Example<'a> {
     name: &'a str,
     i: ocaml::Int,
@@ -100,7 +116,7 @@ pub fn incr(value: ocaml::Value) -> ocaml::Value {
 // This is equivalent to:
 #[no_mangle]
 pub extern "C" fn incr2(value: ocaml::Value) -> ocaml::Value {
-    ocaml::body!((value) {
+    ocaml::body!(gc: (value) {
         let i = value.int_val();
         ocaml::Value::int( i + 1)
     })
@@ -124,6 +140,8 @@ pub fn incrf_bytecode(input: f64) -> f64 {
     incrf(input)
 }
 ```
+
+Note: By default the `func` macro will create a bytecode wrapper (using `bytecode_func`) for functions with more than 5 arguments.
 
 The OCaml stubs would look like this:
 
@@ -163,6 +181,7 @@ This chart contains the mapping between Rust and OCaml types used by `ocaml::fun
 | `f32`            | `float`              |
 | `f64`            | `float`              |
 | `str`            | `string`             |
+| `[u8]`           | `bytes`              |
 | `String`         | `string`             |
 | `Option<A>`      | `'a option`          |
 | `Result<A, B>`   | `exception`          |
@@ -172,7 +191,7 @@ This chart contains the mapping between Rust and OCaml types used by `ocaml::fun
 | `BTreeMap<A, B>` | `('a, 'b) list`      |
 | `LinkedList<A>`  | `'a list`            |
 
-NOTE: Even though `&[Value]` is specifically marked as no copy, any type like `Option<Value>` would also qualify since the inner value is not converted to a Rust type. However, `Option<String>` will do full unmarshaling into Rust types. Another thing to note: `FromValue` for `str` and `&[u8]` is zero-copy, however `ToValue` for `str` and `&[u8]` creates a new value - this is necessary to ensure the string is registered with the OCaml runtime.
+NOTE: Even though `&[Value]` is specifically marked as no copy, any type like `Option<Value>` would also qualify since the inner value is not converted to a Rust type. However, `Option<String>` will do full unmarshaling into Rust types. Another thing to note: `FromValue` for `str` and `&[u8]` is zero-copy, however `IntoValue` for `str` and `&[u8]` creates a new value - this is necessary to ensure the string is registered with the OCaml runtime.
 
 If you're concerned with minimizing allocations/conversions you should use `Value` type directly.
 
@@ -187,8 +206,8 @@ use ocaml::FromValue;
 
 struct MyType;
 
-unsafe extern "C" fn mytype_finalizer(v: ocaml::Value) {
-    let ptr: ocaml::Pointer<MyType> = ocaml::Pointer::from_value(v);
+unsafe extern "C" fn mytype_finalizer(v: ocaml::Raw) {
+    let ptr = v.as_pointer::<MyType>();
     ptr.drop_in_place()
 }
 
@@ -196,8 +215,8 @@ ocaml::custom_finalize!(MyType, mytype_finalizer);
 
 #[ocaml::func]
 pub fn new_my_type() -> ocaml::Pointer<MyType> {
-    ocaml::Pointer::alloc_custom(MyType)
-    // ocaml::Pointer::alloc_final(MyType, finalizer) can also be used
+    ocaml::Pointer::alloc_custom(gc, MyType)
+    // ocaml::Pointer::alloc_final(gc, MyType, finalizer, None) can also be used
     // if you don't intend to implement `Custom`
 }
 
@@ -209,17 +228,29 @@ pub fn my_type_example(t: ocaml::Pointer<MyType>) {
 }
 ```
 
+#### Custom exception type
+
+When a Rust `panic` or `Err` is encountered it will be raised as a `Failure` on the OCaml side, to configure a custom exception type you can register it with the OCaml runtime using the name `Rust_exception`:
+
+```ocaml
+exception Rust
+
+let () = Callback.register_exception "Rust_error" (Rust "")
+```
+
+It must take a single `string` argument.
+
 ## Upgrading
 
 Since 0.10 and later have a much different API compared to earlier version, here is are some major differences that should be considered when upgrading:
 
-- `FromValue` and `ToValue` have been marked `unsafe` because converting OCaml values to Rust and back also depends on the OCaml type signature.
+- `FromValue` and `IntoValue` have been marked `unsafe` because converting OCaml values to Rust and back also depends on the OCaml type signature.
   * A possible solution to this would be a `cbindgen` like tool that generates the correct OCaml types from the Rust code
-- `ToValue` now takes ownership of the value being converted
+- `IntoValue` now takes ownership of the value being converted
 - The `caml!` macro has been rewritten as a procedural macro called `ocaml::func`, which performs automatic type conversion
   * `ocaml::native_func` and `ocaml::bytecode_func` were also added to create functions at a slightly lower level
   * `derive` feature required
-- Added `derive` implementations for `ToValue` and `FromValue` for stucts and enums
+- Added `derive` implementations for `IntoValue` and `FromValue` for stucts and enums
   * `derive` feature required
 - `i32` and `u32` now map to OCaml's `int32` type rather than the `int` type
   * Use `ocaml::Int`/`ocaml::Uint` to refer to the OCaml's `int` types now

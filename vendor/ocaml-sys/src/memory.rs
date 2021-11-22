@@ -39,13 +39,10 @@ use crate::mlvalues::{field, Size, Value};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
-/// The GC root struct. **WARNING**: You should seriously not mess with this...
-///
-/// The fields need to be public because the macros need to access them, which means they're out of the module; in a future version, perhaps we will add methods on the struct, and avoid any `pub` exposure of the fields.
 pub struct CamlRootsBlock {
     pub next: *mut CamlRootsBlock,
-    pub ntables: usize,
-    pub nitems: usize,
+    pub ntables: isize,
+    pub nitems: isize,
     pub tables: [*mut Value; 5],
 }
 
@@ -105,4 +102,7 @@ extern "C" {
     pub fn caml_leave_blocking_section();
     pub fn caml_register_global_root(value: *mut Value);
     pub fn caml_remove_global_root(value: *mut Value);
+    pub fn caml_register_generational_global_root(value: *mut Value);
+    pub fn caml_remove_generational_global_root(value: *mut Value);
+    pub fn caml_modify_generational_global_root(value: *mut Value, newval: Value);
 }

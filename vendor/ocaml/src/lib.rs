@@ -1,7 +1,8 @@
 #![deny(missing_docs)]
 #![cfg_attr(feature = "no-std", no_std)]
+#![allow(clippy::missing_safety_doc)]
 
-//! [ocaml-rs](https://github.com/zsdhipko/ocaml-rs) is a library for directly interacting with the C OCaml runtime, in Rust.
+//! [ocaml-rs](https://github.com/zshipko/ocaml-rs/) is a library for directly interacting with the C OCaml runtime, in Rust.
 //!
 //! The OCaml manual chapter [Interfacing C with OCaml](https://caml.inria.fr/pub/docs/manual-ocaml/intfc.html) does
 //! a great job of explaining low-level details about how to safely interact with the OCaml runtime. This crate aims to
@@ -14,17 +15,17 @@
 //! ## Examples
 //!
 //! ```rust,no_run
-//! // Automatically derive `ToValue` and `FromValue`
+//! // Automatically derive `IntoValue` and `FromValue`
 //! #[cfg(feature = "derive")]
-//! #[derive(ocaml::ToValue, ocaml::FromValue)]
-//! struct Example<'a> {
-//!     name: &'a str,
+//! #[derive(ocaml::IntoValue, ocaml::FromValue)]
+//! struct Example {
+//!     name: String,
 //!     i: ocaml::Int,
 //! }
 //!
 //! #[cfg(feature = "derive")]
 //! #[ocaml::func]
-//! pub fn incr_example(mut e: Example<'static>) -> Example<'static> {
+//! pub fn incr_example(mut e: Example) -> Example {
 //!     e.i += 1;
 //!     e
 //! }
@@ -33,6 +34,13 @@
 //! #[ocaml::func]
 //! pub fn build_tuple(i: ocaml::Int) -> (ocaml::Int, ocaml::Int, ocaml::Int) {
 //!     (i + 1, i + 2, i + 3)
+//! }
+//!
+//! /// A name for the garbage collector handle can also be specified:
+//! #[cfg(feature = "derive")]
+//! #[ocaml::func(my_gc_handle)]
+//! pub unsafe fn my_string() -> ocaml::Value {
+//!     ocaml::Value::string("My string")
 //! }
 //!
 //! #[cfg(feature = "derive")]
@@ -52,15 +60,15 @@
 //! // `native_func` has minimal overhead compared to wrapping with `func`
 //! #[cfg(feature = "derive")]
 //! #[ocaml::native_func]
-//! pub fn incr(value: ocaml::Value) -> ocaml::Value {
+//! pub unsafe fn incr(value: ocaml::Value) -> ocaml::Value {
 //!     let i = value.int_val();
 //!     ocaml::Value::int(i + 1)
 //! }
 //!
 //! // This is equivalent to:
 //! #[no_mangle]
-//! pub extern "C" fn incr2(value: ocaml::Value) -> ocaml::Value {
-//!     ocaml::body!((value) {
+//! pub unsafe extern "C" fn incr2(value: ocaml::Value) -> ocaml::Value {
+//!     ocaml::body!(gc: {
 //!         let i = value.int_val();
 //!         ocaml::Value::int( i + 1)
 //!     })
@@ -104,13 +112,15 @@
 #[cfg(all(feature = "link", feature = "no-std"))]
 std::compile_error!("Cannot use link and no-std features");
 
+pub use ocaml_interop::{self as interop, OCaml, OCamlRef, OCamlRuntime as Runtime};
+
 /// The `sys` module contains the low-level implementation of the OCaml runtime
 pub use ocaml_sys as sys;
 
 #[cfg(feature = "derive")]
 pub use ocaml_derive::{
     ocaml_bytecode_func as bytecode_func, ocaml_func as func, ocaml_native_func as native_func,
-    FromValue, ToValue,
+    FromValue, IntoValue,
 };
 
 #[macro_use]
@@ -123,6 +133,9 @@ mod types;
 mod util;
 mod value;
 
+/// Rooted values
+pub mod root;
+
 /// Functions for interacting with the OCaml runtime
 pub mod runtime;
 
@@ -134,10 +147,10 @@ pub use crate::error::{CamlError, Error};
 pub use crate::runtime::*;
 pub use crate::tag::Tag;
 pub use crate::types::{bigarray, Array, List, Pointer};
-pub use crate::value::{FromValue, ToValue, Value};
+pub use crate::value::{FromValue, IntoValue, Raw, Value};
 
 #[cfg(not(feature = "no-std"))]
-pub use crate::macros::init_panic_handler;
+pub use crate::macros::inital_setup;
 
 /// OCaml `float`
 pub type Float = f64;
@@ -149,7 +162,7 @@ pub type Int = sys::Intnat;
 pub type Uint = sys::Uintnat;
 
 /// Wraps `sys::COMPILER` as `std::process::Command`
-#[cfg(not(feature = "no-std"))]
+#[cfg(not(any(feature = "no-std", feature = "without-ocamlopt")))]
 pub fn ocamlopt() -> std::process::Command {
     std::process::Command::new(sys::COMPILER)
 }

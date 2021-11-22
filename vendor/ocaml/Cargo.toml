@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "ocaml"
-version = "0.12.3"
+version = "0.22.2"
 authors = ["Zach Shipko <zachshipko@gmail.com>"]
 description = "OCaml bindings for Rust"
 documentation = "https://docs.rs/ocaml"
@@ -22,21 +22,34 @@ keywords = ["ocaml", "rust", "ffi"]
 license = "ISC"
 repository = "https://github.com/zshipko/ocaml-rs"
 [package.metadata.docs.rs]
-features = ["docs-rs", "derive", "link"]
+features = ["without-ocamlopt", "derive", "link"]
 [dependencies.cstr_core]
 version = "0.2"
 optional = true
 
-[dependencies.ocaml-derive]
-version = "0.12.1"
+[dependencies.ndarray]
+version = "^0.15.1"
 optional = true
 
+[dependencies.ocaml-boxroot-sys]
+version = "0.2"
+
+[dependencies.ocaml-derive]
+version = "0.22"
+optional = true
+
+[dependencies.ocaml-interop]
+version = "^0.8.5"
+
 [dependencies.ocaml-sys]
-version = "0.12.2"
+version = "0.22"
 
 [features]
+bigarray-ext = ["ndarray"]
+caml-state = ["ocaml-sys/caml-state"]
 default = ["derive"]
 derive = ["ocaml-derive"]
-docs-rs = ["ocaml-sys/docs-rs"]
 link = ["ocaml-sys/link"]
+no-caml-startup = ["ocaml-interop/no-caml-startup"]
 no-std = ["cstr_core/alloc"]
+without-ocamlopt = ["ocaml-sys/without-ocamlopt", "ocaml-interop/without-ocamlopt", "ocaml-boxroot-sys/without-ocamlopt"]

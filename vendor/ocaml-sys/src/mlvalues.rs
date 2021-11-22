@@ -67,11 +67,11 @@ pub unsafe fn wosize_val(val: Value) -> Size {
 }
 
 /// `(((intnat)(x) << 1) + 1)`
-pub const fn val_int(i: isize) -> Value {
+pub const unsafe fn val_int(i: isize) -> Value {
     ((i as isize) << 1) + 1
 }
 
-pub const fn int_val(val: Value) -> isize {
+pub const unsafe fn int_val(val: Value) -> isize {
     ((val as isize) >> 1) as isize
 }
 
@@ -79,12 +79,18 @@ pub fn is_block(v: Value) -> bool {
     (v & 1) == 0
 }
 
-pub fn is_long(v: Value) -> bool {
+pub const fn is_long(v: Value) -> bool {
     (v & 1) != 0
 }
 
 // #define Max_long (((intnat)1 << (8 * sizeof(value) - 2)) - 1)
 // #define Min_long (-((intnat)1 << (8 * sizeof(value) - 2)))
+
+/// Maximum possible value for an OCaml fixnum.
+pub const MAX_FIXNUM: Intnat = (1 << (8 * core::mem::size_of::<Intnat>() - 2)) - 1;
+
+/// Minimum possible value for an OCaml fixnum.
+pub const MIN_FIXNUM: Intnat = -(1 << (8 * core::mem::size_of::<Intnat>() - 2));
 
 /// Extract a field from an OCaml value
 ///
@@ -95,22 +101,26 @@ pub unsafe fn field(block: Value, index: usize) -> *mut Value {
     (block as *mut Value).add(index)
 }
 
-#[doc(hidden)]
-pub unsafe fn as_slice<'a>(value: Value) -> &'a [Value] {
-    ::core::slice::from_raw_parts((value as *const Value).offset(-1), wosize_val(value) + 1)
-}
-
 /// The OCaml `()` (`unit`) value
-pub const UNIT: Value = val_int(0);
+pub const UNIT: Value = unsafe { val_int(0) };
+
+/// The OCaml `None` value
+pub const NONE: Value = unsafe { val_int(0) };
 
 /// Empty list value
-pub const EMPTY_LIST: Value = val_int(0);
+pub const EMPTY_LIST: Value = unsafe { val_int(0) };
 
 /// The OCaml `true` value
-pub const TRUE: Value = val_int(1);
+pub const TRUE: Value = unsafe { val_int(1) };
 
 /// OCaml `false` value
-pub const FALSE: Value = val_int(0);
+pub const FALSE: Value = unsafe { val_int(0) };
+
+/// Tag used for OCaml conses
+pub const TAG_CONS: Tag = 0;
+
+/// Tag used for OCaml `Some x` values
+pub const TAG_SOME: Tag = 0;
 
 /// Pointer to the first byte
 #[inline]

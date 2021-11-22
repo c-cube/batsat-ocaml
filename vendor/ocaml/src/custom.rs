@@ -14,45 +14,26 @@ use crate::*;
 #[allow(missing_docs)]
 pub struct CustomOps {
     pub identifier: *const ocaml_sys::Char,
-    pub finalize: Option<unsafe extern "C" fn(v: Value)>,
-    pub compare: Option<unsafe extern "C" fn(v1: Value, v2: Value) -> i32>,
-    pub hash: Option<unsafe extern "C" fn(v: Value) -> Int>,
+    pub finalize: Option<unsafe extern "C" fn(v: Raw)>,
+    pub compare: Option<unsafe extern "C" fn(v1: Raw, v2: Raw) -> i32>,
+    pub hash: Option<unsafe extern "C" fn(v: Raw) -> Int>,
 
-    pub serialize: Option<unsafe extern "C" fn(v: Value, bsize_32: *mut Uint, bsize_64: *mut Uint)>,
+    pub serialize: Option<unsafe extern "C" fn(v: Raw, bsize_32: *mut Uint, bsize_64: *mut Uint)>,
     pub deserialize: Option<unsafe extern "C" fn(dst: *mut core::ffi::c_void) -> Uint>,
-    pub compare_ext: Option<unsafe extern "C" fn(v1: Value, v2: Value) -> i32>,
+    pub compare_ext: Option<unsafe extern "C" fn(v1: Raw, v2: Raw) -> i32>,
     pub fixed_length: *const sys::custom_fixed_length,
 }
 
 impl Default for CustomOps {
     fn default() -> CustomOps {
-        CustomOps {
-            identifier: core::ptr::null(),
-            finalize: None,
-            compare: None,
-            hash: None,
-            serialize: None,
-            deserialize: None,
-            compare_ext: None,
-            fixed_length: core::ptr::null_mut(),
-        }
+        DEFAULT_CUSTOM_OPS
     }
-}
-
-/// CustomType wraps `CustomOps` to provide `name` and `fixed_length` in the safe manner
-pub struct CustomType {
-    /// Type name
-    pub name: &'static str,
-    /// Owned `fixed_length` value
-    pub fixed_length: Option<sys::custom_fixed_length>,
-    /// Callbacks
-    pub ops: CustomOps,
 }
 
 /// `Custom` is used to define OCaml types that wrap existing Rust types, but are owned by the
 /// garbage collector
 ///
-/// A custom type can only be converted to a `Value` using `ToValue`, but can't be converted from a
+/// A custom type can only be converted to a `Value` using `IntoValue`, but can't be converted from a
 /// value. Once the Rust value is owned by OCaml it should be accessed using `ocaml::Pointer` to
 /// avoid reallocating the same value
 ///
@@ -74,8 +55,14 @@ pub struct CustomType {
 /// }
 /// ```
 pub trait Custom {
-    /// Custom type implementation
-    const TYPE: CustomType;
+    /// Custom type name
+    const NAME: &'static str;
+
+    /// Custom type fixed length
+    const FIXED_LENGTH: Option<sys::custom_fixed_length> = None;
+
+    /// Custom operations
+    const OPS: CustomOps;
 
     /// `used` parameter to `alloc_custom`. This helps determine the frequency of garbage
     /// collection related to this custom type.
@@ -87,19 +74,14 @@ pub trait Custom {
 
     /// Get a static reference the this type's `CustomOps` implementation
     fn ops() -> &'static CustomOps {
-        Self::TYPE.ops.identifier = Self::TYPE.name.as_ptr() as *const ocaml_sys::Char;
-        if let Some(x) = Self::TYPE.fixed_length {
-            Self::TYPE.ops.fixed_length = &x;
-        }
-
-        &Self::TYPE.ops
+        &Self::OPS
     }
 }
 
-unsafe impl<T: 'static + Custom> ToValue for T {
-    fn to_value(self) -> Value {
+unsafe impl<T: 'static + Custom> IntoValue for T {
+    fn into_value(self, rt: &Runtime) -> Value {
         let val: crate::Pointer<T> = Pointer::alloc_custom(self);
-        val.to_value()
+        val.into_value(rt)
     }
 }
 
@@ -115,13 +97,13 @@ unsafe impl<T: 'static + Custom> ToValue for T {
 ///     i: i32,
 /// }
 ///
-/// extern "C" fn mytype_finalizer(_: ocaml::Value) {
+/// extern "C" fn mytype_finalizer(_: ocaml::Raw) {
 ///     println!("This runs when the value gets garbage collected");
 /// }
 ///
-/// extern "C" fn mytype_compare(a: ocaml::Value, b: ocaml::Value) -> i32 {
-///     let a: ocaml::Pointer::<MyType> = ocaml::FromValue::from_value(a);
-///     let b: ocaml::Pointer::<MyType> = ocaml::FromValue::from_value(b);
+/// unsafe extern "C" fn mytype_compare(a: ocaml::Raw, b: ocaml::Raw) -> i32 {
+///     let a = a.as_pointer::<MyType>();
+///     let b = b.as_pointer::<MyType>();
 ///
 ///     let a_i = a.as_ref().i;
 ///     let b_i = b.as_ref().i;
@@ -149,19 +131,13 @@ unsafe impl<T: 'static + Custom> ToValue for T {
 /// }
 ///
 /// impl ocaml::Custom for MyType2 {
-///     const TYPE: ocaml::custom::CustomType = ocaml::custom::CustomType {
-///         name: "rust.MyType\0",
-///         fixed_length: None,
-///         ops: ocaml::custom::CustomOps {
-///             identifier: core::ptr::null(), // This will be filled in when the struct is used
-///             fixed_length: core::ptr::null_mut(), // This will be filled in too
-///             finalize: Some(mytype_finalizer),
-///             compare: Some(mytype_compare),
-///             compare_ext: None,
-///             deserialize: None,
-///             hash: None,
-///             serialize: None
-///         }
+///     const NAME: &'static str = "rust.MyType\0";
+///
+///     const OPS: ocaml::custom::CustomOps = ocaml::custom::CustomOps {
+///         identifier: Self::NAME.as_ptr() as *mut ocaml::sys::Char,
+///         finalize: Some(mytype_finalizer),
+///         compare: Some(mytype_compare),
+///         .. ocaml::custom::DEFAULT_CUSTOM_OPS
 ///     };
 /// }
 /// ```
@@ -169,7 +145,7 @@ unsafe impl<T: 'static + Custom> ToValue for T {
 /// Additionally, `custom` can be used inside the `impl` block:
 ///
 /// ```rust
-/// extern "C" fn implexample_finalizer(_: ocaml::Value) {
+/// extern "C" fn implexample_finalizer(_: ocaml::Raw) {
 ///     println!("This runs when the value gets garbage collected");
 /// }
 ///
@@ -200,14 +176,13 @@ macro_rules! custom {
             }
         }
     };
-    {name : $name:expr $(, $($k:ident : $v:expr),*)? $(,)? } => {
-        const TYPE: $crate::custom::CustomType = $crate::custom::CustomType {
-            name: concat!($name, "\0"),
-            fixed_length: None,
-            ops: $crate::custom::CustomOps {
-                $($($k: Some($v),)*)?
-                .. $crate::custom::DEFAULT_CUSTOM_OPS
-            },
+    {name : $name:expr $(, fixed_length: $fl:expr)? $(, $($k:ident : $v:expr),*)? $(,)? } => {
+        const NAME: &'static str = concat!($name, "\0");
+
+        const OPS: $crate::custom::CustomOps = $crate::custom::CustomOps {
+            identifier: Self::NAME.as_ptr() as *const $crate::sys::Char,
+            $($($k: Some($v),)*)?
+            .. $crate::custom::DEFAULT_CUSTOM_OPS
         };
     };
 }
@@ -221,8 +196,8 @@ macro_rules! custom {
 ///     name: String
 /// }
 ///
-/// unsafe extern "C" fn mytype_finalizer(v: ocaml::Value) {
-///     let p: ocaml::Pointer<MyType> = ocaml::Pointer::from_value(v);
+/// unsafe extern "C" fn mytype_finalizer(v: ocaml::Raw) {
+///     let p = v.as_pointer::<MyType>();
 ///     p.drop_in_place()
 /// }
 ///
