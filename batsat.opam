@@ -5,6 +5,7 @@ author: "simon.cruanes.2007@m4x.org"
 synopsis: "OCaml bindings for batsat, a SAT solver in rust"
 maintainer: "simon.cruanes.2007@m4x.org"
 build: [
+  ["./build_rust.sh"]
   ["dune" "build" "-p" name "-j" jobs]
   ["dune" "build" "@doc" "-p" name "-j" jobs] {with-doc}
   ["dune" "runtest" "-p" name "-j" jobs] {with-test}
