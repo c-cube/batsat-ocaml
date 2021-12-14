@@ -1,0 +1,11 @@
+
+(rule
+  (targets libcbatsat%{ext_lib})
+  (deps Cargo.toml (source_tree src)
+        (source_tree ../../vendor/))
+  (action
+    (progn
+      (run cargo build --release -p cbatsat)
+      (run cp target/release/libcbatsat%{ext_lib} .)
+     )))
+

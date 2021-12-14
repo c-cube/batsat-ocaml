@@ -1,0 +1,16 @@
+[package]
+name = "cbatsat"
+version = "0.1.0"
+authors = ["Simon Cruanes <simon.cruanes.2007@m4x.org>"]
+edition = "2018"
+
+publish = false
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+
+batsat = { path = "../../vendor/batsat/" }
+
+[workspace]
