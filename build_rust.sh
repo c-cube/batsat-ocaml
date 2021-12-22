@@ -2,7 +2,8 @@
 
 if [ "`uname`" = "Darwin" ]; then
   CAML_LIB="`ocamlc -where`";
-  RUSTFLAGS="'-L$CAML_LIB' -lcamlrun" cargo build --release --frozen ;
+  SEP="`echo '\x1f'`";
+  CARGO_ENCODED_RUSTFLAGS="-L$CAML_LIB$SEP-lcamlrun" cargo build --release --frozen ;
 else
   cargo build --release --frozen ;
 fi
