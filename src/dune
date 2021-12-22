@@ -15,7 +15,6 @@
   (libraries threads)
   (wrapped false)
   (modules batsat)
-  (flags :standard -safe-string -w @8)
   (foreign_stubs
     (language c)
     (flags :standard -fPIC -std=c99))
@@ -25,3 +24,6 @@
   ;(c_names batsat_stubs)
   (no_dynlink)
   )
+
+(env
+  (_ (flags :standard -safe-string -warn-error -a+8)))
