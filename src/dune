@@ -1,13 +1,17 @@
 
 (rule
  ; (targets libbatsat_stubs%{ext_lib})
- (targets libbatsat_stubs.a dllbatsat_stubs%{ext_dll} liblibbatsat.a)
- (deps (:lib ../target/release/libbatsat_stubs.a) (:dll ../target/release/libbatsat_stubs%{ext_dll}))
+ (targets libbatsat_stubs.a dllbatsat_stubs%{ext_lib} liblibbatsat.a)
+ (deps (:lib ../target/release/libbatsat_stubs.a)) ;(:dll ../target/release/libbatsat_stubs%{ext_lib}))
  (action
    (progn
      (run cp %{lib} .)
-     (run ar rcs liblibbatsat.a)
-     (run cp %{dll} dllbatsat_stubs%{ext_dll}))))
+     ;(with-stdout-to dummy.c (echo ""))
+     ;(run %{cc} dummy.c -c -o dummy.o)
+     ;(run ar rcs liblibbatsat.a dummy.o)
+     (run cp %{lib} liblibbatsat.a)
+     (run cp %{lib} dllbatsat_stubs%{ext_lib})
+     )))
 
 (library
   (name batsat)
@@ -15,9 +19,6 @@
   (libraries threads)
   (wrapped false)
   (modules batsat)
-  (foreign_stubs
-    (language c)
-    (flags :standard -fPIC -std=c99))
   (c_library_flags :standard -ldl -lpthread) ; -lbatsat_c) ; -static)
   ;(modes native)
   (foreign_archives libbatsat) ; custom!
