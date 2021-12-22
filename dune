@@ -1,2 +1,2 @@
 
-(ignored_subdirs (vendor))
+(vendored_dirs vendor)
