@@ -16,7 +16,8 @@ jobs:
           - ubuntu-latest
           - macos-latest
         ocaml-version:
-          - 4.08.x
+          - 4.07.x
+          - 4.13.x
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
