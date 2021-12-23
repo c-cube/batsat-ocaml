@@ -27,5 +27,5 @@ jobs:
     - run: opam depext -yt batsat
     - run: opam install -t . --deps-only
     - run: eval `opam env` && ./build_rust.sh
-    - run: opam exec -- dune build
+    - run: opam exec -- dune build @install
     - run: opam exec -- dune runtest

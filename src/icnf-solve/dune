@@ -1,6 +1,10 @@
 (executable
   (name icnf_solve)
   (modes native)
-  (libraries containers batsat minisat))
+  (libraries containers batsat
+             (select solver_minisat.ml from
+                     (minisat -> solver_minisat.real.ml)
+                     (-> solver_minisat.dummy.ml))
+             ))
 
 (ocamllex (modules lexer))

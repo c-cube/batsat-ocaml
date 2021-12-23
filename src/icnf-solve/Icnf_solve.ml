@@ -1,5 +1,5 @@
 
-module Vec = CCVector
+open Common
 
 module Parse : sig
   type 'a event =
@@ -57,49 +57,7 @@ end = struct
     aux()
 end
 
-module Solver = struct
-  type 'lit internal = {
-    mklit: int -> 'lit;
-    to_int: 'lit -> int;
-    add_clause: 'lit array -> bool;
-    solve: 'lit array -> bool;
-  }
-  type t = Solver : 'lit internal -> t
-
-  type builder = {
-    name: string;
-    make: unit -> t;
-  }
-
-  let mk_minisat : builder = {
-    name="minisat";
-    make=(fun () ->
-        let module S = Minisat in
-        let s = S.create() in
-        let mklit i = let v = S.Lit.make (abs i) in if i>0 then v else S.Lit.neg v in
-        let add_clause c = try S.add_clause_a s c; true with S.Unsat -> false in
-        let solve ass = try S.solve ~assumptions:ass s; true with S.Unsat -> false in
-        let to_int i = S.Lit.to_int (S.Lit.abs i) * (if S.Lit.sign i then 1 else -1) in
-        Solver { add_clause; solve; mklit; to_int; }
-      );
-  }
-
-  let mk_batsat : builder = {
-    name="batsat";
-    make=(fun () ->
-        let module S = Batsat in
-        let s = S.create() in
-        let mklit i = let v = S.Lit.make (abs i) in if i>0 then v else S.Lit.neg v in
-        let add_clause c = try S.add_clause_a s c; true with S.Unsat -> false in
-        let solve ass = try S.solve ~assumptions:ass s; true with S.Unsat -> false in
-        let to_int i = S.Lit.to_int (S.Lit.abs i) * (if S.Lit.sign i then 1 else -1) in
-        Solver { add_clause; solve; mklit; to_int; }
-      );
-  }
-
-  let name b = b.name
-  let all = [mk_minisat; mk_batsat]
-end
+let() = Solver_minisat.setup()
 
 let solve_with_solver ~debug solver file : unit =
   Printf.printf "c process %S with %s\n" file solver.Solver.name;
@@ -157,8 +115,8 @@ let () =
   let debug = ref false in
   let opt_s =
     Arg.Symbol
-      (List.map Solver.name Solver.all,
-       fun s -> solvers := Solver.(List.find (fun b->b.name=s) all) :: !solvers)
+      (List.map Solver.name (!Solver.all),
+       fun s -> solvers := Solver.(List.find (fun b->b.name=s) !all) :: !solvers)
       in
   let opts = [
     "-d", Arg.Set debug, " debug";

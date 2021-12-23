@@ -1,0 +1,19 @@
+
+(rule
+  (alias runtest)
+  (action (diff regression1.expected regression1.out)))
+(rule
+  (alias runtest)
+  (action (diff regression2.expected regression2.out)))
+
+(rule
+  (targets regression1.out)
+  (deps (:bin ../../src/icnf-solve/icnf_solve.exe) (:file regression1.icnf))
+  (action (with-stdout-to %{targets}
+                          (run %{bin} %{file}))))
+
+(rule
+  (targets regression2.out)
+  (deps (:bin ../../src/icnf-solve/icnf_solve.exe) (:file regression2.icnf))
+  (action (with-stdout-to %{targets}
+                          (run %{bin} %{file}))))
