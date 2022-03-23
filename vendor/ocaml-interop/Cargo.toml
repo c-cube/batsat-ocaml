@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "ocaml-interop"
-version = "0.8.7"
+version = "0.8.8"
 authors = ["Bruno Deferrari <utizoc@gmail.com>"]
 exclude = [".github/*"]
 description = "Utilities for Rust and OCaml interoperability"
